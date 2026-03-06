@@ -1,0 +1,16 @@
+{
+	"schemaVersion": 1,
+	"name": "GitHub Panel (Repositories)",
+	"id": "dev.nuclr.plugin.core.panel.github",
+	"version": "1.0.0",
+	"description": "GitHub file panel provider using GitHub CLI (gh). Repositories and Info nodes only.",
+	"author": "Nuclr Development Team",
+	"license": "Apache-2.0",
+	"website": "https://nuclr.dev",
+	"pageUrl": "https://nuclr.dev/plugins/core/filepanel-github.html",
+	"docUrl": "https://nuclr.dev/plugins/core/filepanel-github.html",
+	"type": "Official",
+	"filePanelProviders": [
+		"dev.nuclr.plugin.core.panel.github.GithubFilePanelProvider"
+	]
+}
