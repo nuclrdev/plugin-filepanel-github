@@ -15,7 +15,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -41,11 +41,14 @@ public class GithubFilePanelProvider implements FilePanelProvider {
 	private static final String GH_MISSING_MESSAGE =
 			"GitHub CLI (gh) is not available or not authenticated.\n"
 			+ "Run: gh auth login";
+	private static final long REFRESH_INTERVAL_MS = 60_000L;
 
 	private final ObjectMapper mapper = new ObjectMapper();
 	private final Path mountBase;
 	private final Path githubRoot;
 	private final Path repositoriesRoot;
+	private final AtomicBoolean refreshInProgress = new AtomicBoolean(false);
+	private volatile long lastRefreshEpochMs = 0L;
 
 	public GithubFilePanelProvider() {
 		this.mountBase = Path.of(System.getProperty("java.io.tmpdir"), "nuclr", "github-filepanel-v1");
@@ -71,7 +74,7 @@ public class GithubFilePanelProvider implements FilePanelProvider {
 	@Override
 	public List<PanelRoot> roots() {
 		try {
-			refreshMaterializedTree();
+			ensureScaffold();
 		} catch (Exception e) {
 			try {
 				Files.createDirectories(repositoriesRoot);
@@ -79,6 +82,7 @@ public class GithubFilePanelProvider implements FilePanelProvider {
 			} catch (IOException ignored) {
 			}
 		}
+		triggerRefresh(false);
 		return List.of(new PanelRoot("GitHub", githubRoot));
 	}
 
@@ -88,7 +92,7 @@ public class GithubFilePanelProvider implements FilePanelProvider {
 	}
 
 	private void refreshMaterializedTree() throws IOException {
-		Files.createDirectories(repositoriesRoot);
+		ensureScaffold();
 		clearDirectory(repositoriesRoot);
 
 		List<RepoSummary> repositories;
@@ -107,6 +111,31 @@ public class GithubFilePanelProvider implements FilePanelProvider {
 		for (RepoSummary repo : repositories) {
 			materializeRepositoryNode(repo);
 		}
+	}
+
+	private void ensureScaffold() throws IOException {
+		Files.createDirectories(repositoriesRoot);
+	}
+
+	private void triggerRefresh(boolean force) {
+		long now = System.currentTimeMillis();
+		if (!force && now - lastRefreshEpochMs < REFRESH_INTERVAL_MS) {
+			return;
+		}
+		if (!refreshInProgress.compareAndSet(false, true)) {
+			return;
+		}
+
+		Thread.ofVirtual().start(() -> {
+			try {
+				refreshMaterializedTree();
+			} catch (Exception ignored) {
+				// roots() must stay fast and resilient; errors are materialized in ERROR.txt.
+			} finally {
+				lastRefreshEpochMs = System.currentTimeMillis();
+				refreshInProgress.set(false);
+			}
+		});
 	}
 
 	private List<RepoSummary> listRepositories() throws IOException {
