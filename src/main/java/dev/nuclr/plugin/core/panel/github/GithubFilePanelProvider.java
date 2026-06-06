@@ -1,27 +1,17 @@
 package dev.nuclr.plugin.core.panel.github;
 
-import static java.nio.file.StandardOpenOption.CREATE;
-import static java.nio.file.StandardOpenOption.TRUNCATE_EXISTING;
-import static java.nio.file.StandardOpenOption.WRITE;
-
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.FileVisitResult;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import javax.swing.JOptionPane;
 
-import dev.nuclr.plugin.panel.FilePanelProvider;
-import dev.nuclr.plugin.panel.PanelRoot;
+import dev.nuclr.platform.plugin.FilePanelNuclrPlugin;
+import dev.nuclr.platform.plugin.NuclrPluginContext;
+import dev.nuclr.platform.plugin.NuclrResource;
+import dev.nuclr.plugin.core.panel.github.gh.Gh;
+import dev.nuclr.plugin.core.panel.github.gh.GitHubRepos;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Minimal GitHub file-panel provider that materialises a read-only navigation
@@ -35,289 +25,221 @@ import dev.nuclr.plugin.panel.PanelRoot;
  *         README.txt
  * </pre>
  */
-public class GithubFilePanelProvider implements FilePanelProvider {
+@Slf4j
+public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
+	
+	public static final String PluginId = "dev.nuclr.plugin.core.panel.github";
+	private static final String PluginName = "Github Plugin";
+	private static final String PluginVersion = "1.0.0";
+	private static final String PluginDescription = "A plugin that provides a file panel for browsing GitHub resources using the GitHub CLI.";
+	private static final String PluginAuthor = "Nuclr Development Team";
+	private static final String PluginLicense = "Apache-2.0";
+	private static final String PluginWebsite = "https://nuclr.dev";
+	private static final String PluginPageUrl = "https://nuclr.dev/plugins/core/filepanel-github.html";
+	private static final String PluginDocUrl = PluginPageUrl;	
 
-	private static final char DISPLAY_SLASH = '\u2215';
-	private static final String GH_MISSING_MESSAGE =
-			"GitHub CLI (gh) is not available or not authenticated.\n"
-			+ "Run: gh auth login";
-	private static final long REFRESH_INTERVAL_MS = 60_000L;
-
-	private final ObjectMapper mapper = new ObjectMapper();
-	private final Path mountBase;
-	private final Path githubRoot;
-	private final Path repositoriesRoot;
-	private final AtomicBoolean refreshInProgress = new AtomicBoolean(false);
-	private volatile long lastRefreshEpochMs = 0L;
-
-	public GithubFilePanelProvider() {
-		this.mountBase = Path.of(System.getProperty("java.io.tmpdir"), "nuclr", "github-filepanel-v1");
-		this.githubRoot = mountBase.resolve("GitHub");
-		this.repositoriesRoot = githubRoot.resolve("Repositories");
-	}
-
+	private boolean focused = false;
+	private NuclrPluginContext context;
+	
+	private boolean initialisedAndAuthenticated = false;
+	
+	private String uuid = java.util.UUID.randomUUID().toString();
+	
+	private NuclrResource selectedResource;
+	
 	@Override
 	public String id() {
-		return "github-repositories";
+		return PluginId;
 	}
 
 	@Override
-	public String displayName() {
-		return "GitHub";
+	public String name() {
+		return PluginName;
 	}
 
 	@Override
-	public int priority() {
-		return 30;
+	public String version() {
+		return PluginVersion;
 	}
 
 	@Override
-	public List<PanelRoot> roots() {
-		try {
-			ensureScaffold();
-		} catch (Exception e) {
-			try {
-				Files.createDirectories(repositoriesRoot);
-				writeText(repositoriesRoot.resolve("ERROR.txt"), "GitHub provider error:\n" + e.getMessage());
-			} catch (IOException ignored) {
-			}
-		}
-		triggerRefresh(false);
-		return List.of(new PanelRoot("GitHub", githubRoot));
+	public String description() {
+		return PluginDescription;
 	}
 
 	@Override
-	public boolean supportsPath(Path path) {
-		return path != null && path.normalize().startsWith(githubRoot.normalize());
+	public String author() {
+		return PluginAuthor;
 	}
 
-	private void refreshMaterializedTree() throws IOException {
-		ensureScaffold();
-		clearDirectory(repositoriesRoot);
+	@Override
+	public String license() {
+		return PluginLicense;
+	}
 
-		List<RepoSummary> repositories;
-		try {
-			repositories = listRepositories();
-		} catch (IOException e) {
-			writeText(repositoriesRoot.resolve("ERROR.txt"), GH_MISSING_MESSAGE + "\n\n" + e.getMessage());
+	@Override
+	public String website() {
+		return PluginWebsite;
+	}
+
+	@Override
+	public String pageUrl() {
+		return PluginPageUrl;
+	}
+
+	@Override
+	public String docUrl() {
+		return PluginDocUrl;
+	}
+
+	@Override
+	public Developer developer() {
+		return Developer.Official;
+	}
+
+	@Override
+	public boolean onFocusGained() {
+		this.focused = true;
+		return true;
+	}
+
+	@Override
+	public void onFocusLost() {
+		this.focused = false;
+	}
+
+	@Override
+	public boolean isFocused() {
+		return focused;
+	}
+
+	@Override
+	public void preinit(NuclrPluginContext context) {
+		this.context = context;
+	}
+
+	@Override
+	public NuclrPluginContext getContext() {
+		return context;
+	}
+	
+	@Override
+	public MenuItemsHolder getPluginMenuItems() {
+		
+		var holder = new MenuItemsHolder();
+		
+		var menuItem = new MenuItem();
+		menuItem.setPath(ResourcesHelper.root());
+		menuItem.setText("Github");
+		menuItem.setUuid("gh_root");
+		
+		holder.setMenuItems(List.of(menuItem));
+		
+		return holder;
+	}
+
+	@Override
+	public void init() {
+
+		//  TODO: check if gh CLI is available, if not, show a warning and disable the plugin's functionality
+		if (false == Gh.isGhInstalled()) {
+			showError("GitHub CLI not found", "The GitHub file panel plugin requires the GitHub CLI to be installed. Please install the GitHub CLI to use this plugin.");
+			log.info("GitHub CLI not found");
 			return;
 		}
-
-		if (repositories.isEmpty()) {
-			writeText(repositoriesRoot.resolve("EMPTY.txt"), "No repositories returned by gh repo list.");
+		
+		// TODO: check if the user is authenticated with gh CLI, if not, show a warning and disable the plugin's functionality
+		if (false == Gh.isGhAuthenticated()) {
+			showError("GitHub CLI not authenticated", "The GitHub file panel plugin requires the user to be authenticated with the GitHub CLI. Please authenticate with the GitHub CLI to use this plugin.");
+			log.info("GitHub CLI not authenticated");
 			return;
 		}
-
-		for (RepoSummary repo : repositories) {
-			materializeRepositoryNode(repo);
-		}
+		
+		initialisedAndAuthenticated = true;
 	}
 
-	private void ensureScaffold() throws IOException {
-		Files.createDirectories(repositoriesRoot);
+	@Override
+	public String uuid() {
+		return uuid;
 	}
 
-	private void triggerRefresh(boolean force) {
-		long now = System.currentTimeMillis();
-		if (!force && now - lastRefreshEpochMs < REFRESH_INTERVAL_MS) {
-			return;
-		}
-		if (!refreshInProgress.compareAndSet(false, true)) {
-			return;
-		}
-
-		Thread.ofVirtual().start(() -> {
-			try {
-				refreshMaterializedTree();
-			} catch (Exception ignored) {
-				// roots() must stay fast and resilient; errors are materialized in ERROR.txt.
-			} finally {
-				lastRefreshEpochMs = System.currentTimeMillis();
-				refreshInProgress.set(false);
-			}
-		});
+	@Override
+	public void unload() {
+		// TODO Auto-generated method stub
+		
 	}
 
-	private List<RepoSummary> listRepositories() throws IOException {
-		String json = runGh(List.of(
-				"repo",
-				"list",
-				"--limit",
-				"1000",
-				"--json",
-				"name,nameWithOwner,owner,description,isPrivate,isFork,url"));
-
-		JsonNode root = mapper.readTree(json);
-		var repos = new ArrayList<RepoSummary>();
-		if (!root.isArray()) {
-			return repos;
-		}
-		for (JsonNode n : root) {
-			String nameWithOwner = text(n, "nameWithOwner");
-			if (nameWithOwner.isBlank()) {
-				continue;
-			}
-			repos.add(new RepoSummary(
-					nameWithOwner,
-					text(n.path("owner"), "login"),
-					text(n, "name"),
-					textOrNull(n, "description"),
-					n.path("isPrivate").asBoolean(false),
-					n.path("isFork").asBoolean(false),
-					text(n, "url")));
-		}
-		return repos;
+	@Override
+	public void closeResource() {
+		// TODO Auto-generated method stub
+		
 	}
 
-	private void materializeRepositoryNode(RepoSummary repo) throws IOException {
-		String displayName = repo.nameWithOwner().replace('/', DISPLAY_SLASH);
-		Path repoPath = repositoriesRoot.resolve(displayName);
-		Path infoPath = repoPath.resolve("Info");
-		Files.createDirectories(infoPath);
+	@Override
+	public NuclrResource getCurrentResource() {
+		return this.selectedResource;
+	}
 
-		String infoText;
-		try {
-			infoText = buildRepositoryInfoText(repo.nameWithOwner());
-		} catch (IOException e) {
-			infoText = fallbackInfoText(repo) + "\n\nInfo fetch failed:\n" + e.getMessage();
+	@Override
+	public boolean supports(Path path) {
+
+		// supports() is probed on the TEMPLATE instance (preinit only), BEFORE any
+		// live instance exists, so it must decide purely from the path and must NOT
+		// depend on init() state. Returning true here is what causes the registry to
+		// build a live instance and finally call init().
+		if (path == null) {
+			return false;
 		}
-		writeText(infoPath.resolve("README.txt"), infoText);
-	}
-
-	private String buildRepositoryInfoText(String nameWithOwner) throws IOException {
-		String json = runGh(List.of(
-				"repo",
-				"view",
-				nameWithOwner,
-				"--json",
-				"name,nameWithOwner,owner,description,isPrivate,isFork,defaultBranchRef,url,homepage,visibility"));
-
-		JsonNode n = mapper.readTree(json);
-		String owner = text(n.path("owner"), "login");
-		String name = text(n, "name");
-		String description = textOrNull(n, "description");
-		String visibility = text(n, "visibility").toUpperCase(Locale.ROOT);
-		String defaultBranch = text(n.path("defaultBranchRef"), "name");
-		String homepage = textOrNull(n, "homepage");
-		String url = text(n, "url");
-
-		return String.join("\n",
-				"Repository: " + text(n, "nameWithOwner"),
-				"Owner: " + owner,
-				"Name: " + name,
-				"Description: " + (description == null ? "" : description),
-				"Visibility: " + visibility,
-				"Private: " + n.path("isPrivate").asBoolean(false),
-				"Fork: " + n.path("isFork").asBoolean(false),
-				"Default branch: " + defaultBranch,
-				"Homepage: " + (homepage == null ? "" : homepage),
-				"URL: " + url,
-				"",
-				"Fetched via gh at " + Instant.now());
-	}
-
-	private static String fallbackInfoText(RepoSummary repo) {
-		return String.join("\n",
-				"Repository: " + repo.nameWithOwner(),
-				"Owner: " + repo.owner(),
-				"Name: " + repo.name(),
-				"Description: " + (repo.description() == null ? "" : repo.description()),
-				"Private: " + repo.isPrivate(),
-				"Fork: " + repo.isFork(),
-				"URL: " + repo.url());
-	}
-
-	private String runGh(List<String> args) throws IOException {
-		var command = new ArrayList<String>();
-		command.add("gh");
-		command.addAll(args);
-
-		Process process;
-		try {
-			process = new ProcessBuilder(command).start();
-		} catch (IOException e) {
-			throw new IOException("Cannot start gh command: " + String.join(" ", command), e);
-		}
-
-		String out;
-		String err;
-		try {
-			out = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-			err = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-		} catch (IOException e) {
-			throw new IOException("Cannot read gh output for: " + String.join(" ", command), e);
-		}
-
-		try {
-			int code = process.waitFor();
-			if (code != 0) {
-				String details = !err.isBlank() ? err.strip() : out.strip();
-				throw new IOException("gh exited with code " + code + ": " + details);
-			}
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new IOException("Interrupted while running gh", e);
-		}
-
-		return out;
-	}
-
-	private static String text(JsonNode node, String field) {
-		JsonNode value = node.path(field);
-		return value.isMissingNode() || value.isNull() ? "" : value.asText("");
-	}
-
-	private static String textOrNull(JsonNode node, String field) {
-		JsonNode value = node.path(field);
-		if (value.isMissingNode() || value.isNull()) {
-			return null;
-		}
-		String text = value.asText("");
-		return text.isBlank() ? null : text;
-	}
-
-	private static void writeText(Path path, String text) throws IOException {
-		Files.createDirectories(path.getParent());
-		Files.writeString(path, text, StandardCharsets.UTF_8, CREATE, WRITE, TRUNCATE_EXISTING);
-	}
-
-	private static void clearDirectory(Path dir) throws IOException {
-		if (!Files.exists(dir)) {
-			return;
-		}
-		try (var stream = Files.list(dir)) {
-			for (Path child : stream.toList()) {
-				deleteRecursively(child);
+		
+		// Init if necessary
+		if (false == initialisedAndAuthenticated && path.equals(ResourcesHelper.root().getPath())) {
+			init();
+			if (false == initialisedAndAuthenticated) {
+				return false;
 			}
 		}
-	}
-
-	private static void deleteRecursively(Path path) throws IOException {
-		if (Files.isDirectory(path)) {
-			Files.walkFileTree(path, new SimpleFileVisitor<>() {
-				@Override
-				public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-					Files.deleteIfExists(file);
-					return FileVisitResult.CONTINUE;
-				}
-				@Override
-				public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
-					Files.deleteIfExists(dir);
-					return FileVisitResult.CONTINUE;
-				}
-			});
-			return;
+		
+		// Root?
+		if (path.equals(ResourcesHelper.root().getPath())) {
+			return true;
 		}
-		Files.deleteIfExists(path);
+		
+		/*
+
+		var rootName = ResourcesHelper.root().getPath().toString();
+
+		return path.toString().equals(rootName) || path.startsWith(Path.of(rootName));
+		*/
+		
+		return false;
+		
 	}
 
-	private record RepoSummary(
-			String nameWithOwner,
-			String owner,
-			String name,
-			String description,
-			boolean isPrivate,
-			boolean isFork,
-			String url) {
+	private void showError(String title, String message) {
+		JOptionPane.showMessageDialog(null, message, title, JOptionPane.ERROR_MESSAGE);
 	}
+
+	@Override
+	public NuclrResourceData openResource(NuclrResource resourceToOpen, AtomicBoolean cancelled) {
+		
+		if (resourceToOpen.equals(ResourcesHelper.root())) {
+			this.selectedResource = resourceToOpen;
+			return GitHubRepos.repos();
+		}
+		
+		return new NuclrResourceData();
+	}
+
+	@Override
+	public String getCurrentLocationDisplayText() {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public String getSelectionSummaryText(List<NuclrResource> selectedResources) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
 }
