@@ -10,6 +10,7 @@ import dev.nuclr.platform.plugin.FilePanelNuclrPlugin;
 import dev.nuclr.platform.plugin.NuclrPluginContext;
 import dev.nuclr.platform.plugin.NuclrResource;
 import dev.nuclr.plugin.core.panel.github.gh.Gh;
+import dev.nuclr.plugin.core.panel.github.gh.GitHubBranches;
 import dev.nuclr.plugin.core.panel.github.gh.GitHubRepos;
 import lombok.extern.slf4j.Slf4j;
 
@@ -204,6 +205,11 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 			return true;
 		}
 		
+		// Repo branchs
+		if (path.getFileName() != null && path.getFileName().toString()!=null && "github-repo".equals(path.getFileName().toString())) {
+			return true;
+		}
+		
 		/*
 
 		var rootName = ResourcesHelper.root().getPath().toString();
@@ -221,10 +227,17 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 
 	@Override
 	public NuclrResourceData openResource(NuclrResource resourceToOpen, AtomicBoolean cancelled) {
-		
+
+		// List repos
 		if (resourceToOpen.equals(ResourcesHelper.root())) {
 			this.selectedResource = resourceToOpen;
 			return GitHubRepos.repos();
+		}
+		
+		// List repo branchs
+		var path = resourceToOpen.getPath();
+		if (path!=null && path.getFileName() != null && path.getFileName().toString()!=null && "github-repo".equals(path.getFileName().toString())) {
+			return GitHubBranches.branches(resourceToOpen);
 		}
 		
 		return new NuclrResourceData();

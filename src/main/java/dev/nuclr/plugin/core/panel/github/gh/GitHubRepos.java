@@ -1,7 +1,12 @@
 package dev.nuclr.plugin.core.panel.github.gh;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.nuclr.platform.plugin.FilePanelNuclrPlugin.NuclrResourceData;
@@ -9,19 +14,12 @@ import dev.nuclr.plugin.core.panel.github.model.RepoResource;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
-
 @Slf4j
 public class GitHubRepos {
 
 	private static final ObjectMapper objectMapper = new ObjectMapper();
 
-	public static final String Repository = "Repository";
+	public static final String RepositoryName = "Repository name";
 	public static final String Visibility = "Visibility";
 
 	/** Get all repositories the user has access to as NuclrResourceData. */
@@ -29,7 +27,7 @@ public class GitHubRepos {
 
 		var data = new NuclrResourceData();
 
-		data.setColumnNames(List.of(Repository, Visibility));
+		data.setColumnNames(List.of(RepositoryName, Visibility));
 
 		for (var repo : loadAllRepos()) {
 
