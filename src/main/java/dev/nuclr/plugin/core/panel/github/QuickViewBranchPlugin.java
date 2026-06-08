@@ -17,8 +17,13 @@
 */
 package dev.nuclr.plugin.core.panel.github;
 
+import java.awt.CardLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Desktop;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.GridBagLayout;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -31,10 +36,17 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
+import javax.swing.Box;
+import javax.swing.BoxLayout;
 import javax.swing.JComponent;
 import javax.swing.JEditorPane;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.event.HyperlinkEvent;
@@ -61,10 +73,12 @@ import lombok.extern.slf4j.Slf4j;
  * all into a scrollable HTML panel.
  *
  * <p>
- * All {@code gh} calls run inside {@link #openResource}, which the host invokes
- * off the EDT; the rendered HTML is pushed back to the panel on the EDT. Every
- * call is best-effort: a section is simply omitted if its {@code gh} call fails,
- * so a partial picture is shown rather than nothing.
+ * The view is a {@link CardLayout} with an animated <em>loading</em> card and a
+ * <em>content</em> card. {@link #openResource} returns immediately after showing
+ * the loading card and kicks off the {@code gh} work on a background thread,
+ * which narrates progress into the loading card and finally swaps in the
+ * rendered HTML. Every {@code gh} call is best-effort: a section is simply
+ * omitted if its call fails, so a partial picture is shown rather than nothing.
  */
 @Slf4j
 public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
@@ -79,6 +93,9 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 	private static final String PluginPageUrl = "https://nuclr.dev/plugins/core/filepanel-github.html";
 	private static final String PluginDocUrl = PluginPageUrl;
 
+	private static final String CARD_LOADING = "loading";
+	private static final String CARD_CONTENT = "content";
+
 	private static final ObjectMapper MAPPER = new ObjectMapper();
 
 	private NuclrPluginContext context;
@@ -86,29 +103,100 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 	private NuclrResource currentResource;
 	private volatile AtomicBoolean currentCancelled;
 
+	private JPanel container;
+	private CardLayout cardLayout;
+
 	private JScrollPane scrollPane;
 	private JEditorPane editor;
+
+	// Loading card widgets.
+	private JProgressBar progressBar;
+	private JLabel loadingTitle;
+	private JLabel loadingSubtitle;
+	private JLabel loadingStatus;
 
 	// ---------------------------------------------------------------- panel ---
 
 	@Override
 	public JComponent panel() {
-		if (scrollPane == null) {
-			editor = new JEditorPane();
-			editor.setEditable(false);
-			editor.setContentType("text/html");
-			editor.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
-			editor.setBackground(uiColor("Panel.background", new Color(43, 43, 43)));
-			editor.addHyperlinkListener(e -> {
-				if (HyperlinkEvent.EventType.ACTIVATED == e.getEventType() && e.getURL() != null) {
-					openInBrowser(e.getURL().toString());
-				}
-			});
-			scrollPane = new JScrollPane(editor);
-			scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-			scrollPane.setBorder(null);
+		if (container == null) {
+			cardLayout = new CardLayout();
+			container = new JPanel(cardLayout);
+			container.add(buildLoadingCard(), CARD_LOADING);
+			container.add(buildContentCard(), CARD_CONTENT);
 		}
+		return container;
+	}
+
+	private JComponent buildContentCard() {
+		editor = new JEditorPane();
+		editor.setEditable(false);
+		editor.setContentType("text/html");
+		editor.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
+		editor.setBackground(uiColor("Panel.background", new Color(43, 43, 43)));
+		editor.addHyperlinkListener(e -> {
+			if (HyperlinkEvent.EventType.ACTIVATED == e.getEventType() && e.getURL() != null) {
+				openInBrowser(e.getURL().toString());
+			}
+		});
+		scrollPane = new JScrollPane(editor);
+		scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+		scrollPane.setBorder(null);
 		return scrollPane;
+	}
+
+	/** A centred, animated loading card: branch title, repo subtitle, indeterminate bar, live status. */
+	private JComponent buildLoadingCard() {
+
+		Color bg = uiColor("Panel.background", new Color(43, 43, 43));
+		Color fg = uiColor("Label.foreground", new Color(204, 204, 204));
+		Color dim = blend(fg, bg, 0.45f);
+		Color accent = uiColor("Component.focusColor", new Color(88, 157, 246));
+
+		JPanel inner = new JPanel();
+		inner.setOpaque(false);
+		inner.setLayout(new BoxLayout(inner, BoxLayout.Y_AXIS));
+
+		JLabel glyph = centredLabel("⌥", fg); // ⌥ — a small decorative mark
+		glyph.setFont(glyph.getFont().deriveFont(Font.BOLD, 28f));
+		glyph.setForeground(accent);
+
+		loadingTitle = centredLabel("Loading…", fg);
+		loadingTitle.setFont(loadingTitle.getFont().deriveFont(Font.BOLD, 18f));
+
+		loadingSubtitle = centredLabel(" ", dim);
+
+		progressBar = new JProgressBar();
+		progressBar.setIndeterminate(true);
+		progressBar.setBorderPainted(false);
+		progressBar.setPreferredSize(new Dimension(260, 6));
+		progressBar.setMaximumSize(new Dimension(260, 6));
+		progressBar.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+		loadingStatus = centredLabel("Contacting GitHub…", dim);
+		loadingStatus.setFont(loadingStatus.getFont().deriveFont(11f));
+
+		inner.add(glyph);
+		inner.add(Box.createVerticalStrut(12));
+		inner.add(loadingTitle);
+		inner.add(Box.createVerticalStrut(4));
+		inner.add(loadingSubtitle);
+		inner.add(Box.createVerticalStrut(18));
+		inner.add(progressBar);
+		inner.add(Box.createVerticalStrut(10));
+		inner.add(loadingStatus);
+
+		JPanel card = new JPanel(new GridBagLayout()); // GridBag with one child centres it
+		card.setBackground(bg);
+		card.add(inner);
+		return card;
+	}
+
+	private static JLabel centredLabel(String text, Color color) {
+		JLabel label = new JLabel(text, SwingConstants.CENTER);
+		label.setForeground(color);
+		label.setAlignmentX(Component.CENTER_ALIGNMENT);
+		return label;
 	}
 
 	// ------------------------------------------------------------- lifecycle ---
@@ -140,14 +228,32 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 			return false;
 		}
 
-		// We are already off the EDT here (the host runs openResource on a virtual
-		// thread), so the blocking gh calls are fine; the HTML is set back on the EDT.
-		try {
-			setHtml(buildHtml(repo, branch, cancelled));
-		} catch (Exception e) {
-			log.error("Failed to build branch quick view for {}@{}: {}", repo, branch, e.getMessage(), e);
-			setHtml(errorHtml(repo, branch, e.getMessage()));
-		}
+		final String frepo = repo;
+		final String fbranch = branch;
+
+		// Show the animated loading card immediately and return true so the host swaps
+		// this panel in right away; the gh work then runs on its own thread, narrating
+		// progress into the loading card before revealing the content.
+		showLoading(frepo, fbranch);
+
+		Thread worker = new Thread(() -> {
+			try {
+				String html = buildHtml(frepo, fbranch, cancelled, status -> updateLoadingStatus(status, cancelled));
+				if (isCancelled(cancelled)) {
+					return;
+				}
+				showContent(html);
+			} catch (Exception e) {
+				if (isCancelled(cancelled)) {
+					return;
+				}
+				log.error("Failed to build branch quick view for {}@{}: {}", frepo, fbranch, e.getMessage(), e);
+				showContent(errorHtml(frepo, fbranch, e.getMessage()));
+			}
+		}, "gh-branch-qv");
+		worker.setDaemon(true);
+		worker.start();
+
 		return true;
 	}
 
@@ -162,8 +268,14 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 	@Override
 	public void unload() {
 		closeResource();
+		container = null;
+		cardLayout = null;
 		scrollPane = null;
 		editor = null;
+		progressBar = null;
+		loadingTitle = null;
+		loadingSubtitle = null;
+		loadingStatus = null;
 		context = null;
 	}
 
@@ -192,15 +304,66 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 		return 1;
 	}
 
+	// --------------------------------------------------------- card switching ---
+
+	private void showLoading(String repo, String branch) {
+		onEdt(() -> {
+			if (loadingTitle != null) {
+				loadingTitle.setText(branch);
+			}
+			if (loadingSubtitle != null) {
+				loadingSubtitle.setText(repo);
+			}
+			if (loadingStatus != null) {
+				loadingStatus.setText("Contacting GitHub…");
+			}
+			if (progressBar != null) {
+				progressBar.setIndeterminate(true);
+			}
+			if (cardLayout != null && container != null) {
+				cardLayout.show(container, CARD_LOADING);
+			}
+		});
+	}
+
+	private void updateLoadingStatus(String status, AtomicBoolean cancelled) {
+		if (isCancelled(cancelled)) {
+			return;
+		}
+		onEdt(() -> {
+			if (loadingStatus != null) {
+				loadingStatus.setText(status);
+			}
+		});
+	}
+
+	private void showContent(String html) {
+		onEdt(() -> {
+			if (editor != null) {
+				editor.setText(html);
+				editor.setCaretPosition(0);
+			}
+			if (progressBar != null) {
+				progressBar.setIndeterminate(false);
+			}
+			if (cardLayout != null && container != null) {
+				cardLayout.show(container, CARD_CONTENT);
+			}
+		});
+	}
+
 	// ------------------------------------------------------------- rendering ---
 
-	private String buildHtml(String repo, String branch, AtomicBoolean cancelled) throws IOException {
+	private String buildHtml(String repo, String branch, AtomicBoolean cancelled, Consumer<String> progress)
+			throws IOException {
 
+		progress.accept("Fetching branch details…");
 		JsonNode branchNode = ghJson("repos/" + repo + "/branches/" + branch, cancelled);
 		if (branchNode == null || branchNode.path("name").isMissingNode()) {
 			throw new IOException("Could not read branch '" + branch + "' in " + repo + " via gh.");
 		}
 
+		progress.accept("Reading repository…");
 		JsonNode repoNode = ghJson("repos/" + repo, cancelled);
 		String defaultBranch = text(repoNode, "default_branch");
 
@@ -234,6 +397,7 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 
 		// --- Latest commit ---------------------------------------------------
 		if (!commit.isMissingNode()) {
+			progress.accept("Analysing latest commit…");
 			sb.append(section("Latest commit"));
 			sb.append("<table>");
 			JsonNode author = commit.path("author");
@@ -258,6 +422,7 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 
 		// --- Head commit diff stats -----------------------------------------
 		if (!sha.isBlank() && !isCancelled(cancelled)) {
+			progress.accept("Computing diff stats…");
 			JsonNode commitDetail = ghJson("repos/" + repo + "/commits/" + sha, cancelled);
 			if (commitDetail != null) {
 				JsonNode stats = commitDetail.path("stats");
@@ -274,6 +439,7 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 
 		// --- Comparison to the default branch -------------------------------
 		if (!defaultBranch.isBlank() && !defaultBranch.equals(branch) && !isCancelled(cancelled)) {
+			progress.accept("Comparing with " + defaultBranch + "…");
 			JsonNode cmp = ghJson("repos/" + repo + "/compare/" + defaultBranch + "..." + branch, cancelled);
 			if (cmp != null && !cmp.path("status").isMissingNode()) {
 				sb.append(section("Compared with " + esc(defaultBranch)));
@@ -307,6 +473,7 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 
 		// --- Pull requests for this branch ----------------------------------
 		if (!isCancelled(cancelled)) {
+			progress.accept("Loading pull requests…");
 			String owner = repo.contains("/") ? repo.substring(0, repo.indexOf('/')) : "";
 			JsonNode prs = ghJson(
 					"repos/" + repo + "/pulls?state=all&per_page=20&head=" + owner + ":" + branch, cancelled);
@@ -448,17 +615,11 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 
 	// --------------------------------------------------------------- utility ---
 
-	private void setHtml(String html) {
-		Runnable apply = () -> {
-			if (editor != null) {
-				editor.setText(html);
-				editor.setCaretPosition(0);
-			}
-		};
+	private static void onEdt(Runnable r) {
 		if (SwingUtilities.isEventDispatchThread()) {
-			apply.run();
+			r.run();
 		} else {
-			SwingUtilities.invokeLater(apply);
+			SwingUtilities.invokeLater(r);
 		}
 	}
 
