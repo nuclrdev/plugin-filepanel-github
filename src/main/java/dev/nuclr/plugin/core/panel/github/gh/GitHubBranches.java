@@ -43,6 +43,10 @@ public final class GitHubBranches {
 		// Clone repository metadata to avoid modifying the original resource
 		var up = ResourcesHelper.root();
 		up.setName("..");
+		// The host sorts directories-first then by name with no special-casing for
+		// "..", so the parent entry only lands on top when it is itself a folder.
+		// RootResource doesn't set this, so force it here.
+		up.setFolder(true);
 		up.getMetadata().put(BranchName, "..");
 		data.getEntries().add(up);
 

@@ -26,16 +26,27 @@ public class BranchResource extends NuclrResource {
 
 	private static final long serialVersionUID = 6406294149034958472L;
 
+	/** Path tag identifying a branch resource to the host's supports() probe. */
+	public static final String Tag = "github-repo-branch";
+
+	/** Metadata key holding the owner/repo this branch belongs to. */
+	public static final String Repo = "github-branch-repo";
+	
+	public static final String Branch = "github-branch";
+
 	public BranchResource(String repo, String branch) {
 
-		super(Path.of("github-repo-branch"));
+		super(Path.of(Tag));
 
 		this.setName(branch);
+		this.setFolder(true);
 
 		var uuid = "gh://repo/" + repo + "/branch/" + branch;
 		this.setUuid(uuid);
 
 		this.getMetadata().put(GitHubBranches.BranchName, branch);
+		this.getMetadata().put(Repo, repo);
+		this.getMetadata().put(Branch, true);
 	}
 
 }

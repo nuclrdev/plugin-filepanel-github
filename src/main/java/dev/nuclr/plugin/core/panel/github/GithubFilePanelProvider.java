@@ -12,6 +12,9 @@ import dev.nuclr.platform.plugin.NuclrResource;
 import dev.nuclr.plugin.core.panel.github.gh.Gh;
 import dev.nuclr.plugin.core.panel.github.gh.GitHubBranches;
 import dev.nuclr.plugin.core.panel.github.gh.GitHubRepos;
+import dev.nuclr.plugin.core.panel.github.gh.GitHubSourceListing;
+import dev.nuclr.plugin.core.panel.github.model.BranchResource;
+import dev.nuclr.plugin.core.panel.github.model.SourceResource;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -182,7 +185,9 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 	}
 
 	@Override
-	public boolean supports(Path path) {
+	public boolean supports(NuclrResource resource) {
+		
+		var path = resource.getPath();
 
 		// supports() is probed on the TEMPLATE instance (preinit only), BEFORE any
 		// live instance exists, so it must decide purely from the path and must NOT
@@ -205,20 +210,21 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 			return true;
 		}
 		
-		// Repo branchs
-		if (path.getFileName() != null && path.getFileName().toString()!=null && "github-repo".equals(path.getFileName().toString())) {
-			return true;
+		// Navigable resources are identified by their path tag (filename). Source
+		// files use a distinct tag and are intentionally NOT navigable.
+		var tag = path.getFileName() != null ? path.getFileName().toString() : null;
+		if (tag == null) {
+			return false;
 		}
-		
-		/*
 
-		var rootName = ResourcesHelper.root().getPath().toString();
-
-		return path.toString().equals(rootName) || path.startsWith(Path.of(rootName));
-		*/
-		
-		return false;
-		
+		switch (tag) {
+			case "github-repo":              // repository -> branches
+			case BranchResource.Tag:         // branch -> source root
+			case SourceResource.DirTag:      // source directory -> children
+				return true;
+			default:
+				return false;
+		}
 	}
 
 	private void showError(String title, String message) {
@@ -233,20 +239,60 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 			this.selectedResource = resourceToOpen;
 			return GitHubRepos.repos();
 		}
-		
-		// List repo branchs
+
 		var path = resourceToOpen.getPath();
-		if (path!=null && path.getFileName() != null && path.getFileName().toString()!=null && "github-repo".equals(path.getFileName().toString())) {
-			return GitHubBranches.branches(resourceToOpen);
+		var tag = path != null && path.getFileName() != null ? path.getFileName().toString() : null;
+
+		if (tag != null) {
+			switch (tag) {
+
+				// Repository -> its branches
+				case "github-repo":
+					this.selectedResource = resourceToOpen;
+					return GitHubBranches.branches(resourceToOpen);
+
+				// Branch -> fetch (once) + cache full source, list root directory
+				case BranchResource.Tag:
+					this.selectedResource = resourceToOpen;
+					return GitHubSourceListing.openBranch(resourceToOpen);
+
+				// Source directory -> list children from the cached tree
+				case SourceResource.DirTag:
+					this.selectedResource = resourceToOpen;
+					return GitHubSourceListing.openDirectory(resourceToOpen);
+
+				default:
+					break;
+			}
 		}
-		
+
 		return new NuclrResourceData();
 	}
 
 	@Override
 	public String getCurrentLocationDisplayText() {
-		// TODO Auto-generated method stub
-		return null;
+
+		if (selectedResource == null) {
+			return "GitHub";
+		}
+
+		var path = selectedResource.getPath();
+		var tag = path != null && path.getFileName() != null ? path.getFileName().toString() : null;
+
+		if (BranchResource.Tag.equals(tag)) {
+			var repo = selectedResource.getMetadata(BranchResource.Repo, "");
+			var branch = selectedResource.getMetadata(GitHubBranches.BranchName, "");
+			return "GitHub: " + repo + " @ " + branch;
+		}
+
+		if (SourceResource.DirTag.equals(tag)) {
+			var repo = selectedResource.getMetadata(SourceResource.Repo, "");
+			var branch = selectedResource.getMetadata(SourceResource.Branch, "");
+			var srcPath = selectedResource.getMetadata(SourceResource.SourcePath, "");
+			return "GitHub: " + repo + " @ " + branch + "/" + srcPath;
+		}
+
+		return "GitHub";
 	}
 
 	@Override
