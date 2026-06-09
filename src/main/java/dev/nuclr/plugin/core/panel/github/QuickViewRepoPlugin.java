@@ -69,9 +69,9 @@ import lombok.extern.slf4j.Slf4j;
  * <p>
  * When a repository (a {@code RepoResource}, identified by the {@code github-repo}
  * path tag) is previewed, this plugin shells out to the {@code gh} CLI to gather
- * a broad picture of the repo — description, owner, visibility, default branch,
+ * a broad picture of the repo â€” description, owner, visibility, default branch,
  * stats (stars/forks/issues), topics, language breakdown, enabled features and
- * the latest release — and renders it into a scrollable HTML panel.
+ * the latest release â€” and renders it into a scrollable HTML panel.
  *
  * <p>
  * The view is a {@link CardLayout} with an animated <em>loading</em> card and a
@@ -85,7 +85,7 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 
 	public static final String PluginId = "dev.nuclr.plugin.core.panel.github.quickviewrepo";
 	private static final String PluginName = "Github Plugin (Repository Quick View)";
-	private static final String PluginVersion = "1.0.0";
+	private static final String PluginVersion = loadVersion();
 	private static final String PluginDescription = "A quick view plugin for GitHub repositories.";
 	private static final String PluginAuthor = "Nuclr Development Team";
 	private static final String PluginLicense = "Apache-2.0";
@@ -160,10 +160,10 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 		inner.setOpaque(false);
 		inner.setLayout(new BoxLayout(inner, BoxLayout.Y_AXIS));
 
-		JLabel glyph = centredLabel("◈", accent);
+		JLabel glyph = centredLabel("â—ˆ", accent);
 		glyph.setFont(glyph.getFont().deriveFont(Font.BOLD, 28f));
 
-		loadingTitle = centredLabel("Loading…", fg);
+		loadingTitle = centredLabel("Loadingâ€¦", fg);
 		loadingTitle.setFont(loadingTitle.getFont().deriveFont(Font.BOLD, 18f));
 
 		loadingSubtitle = centredLabel(" ", dim);
@@ -175,7 +175,7 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 		progressBar.setMaximumSize(new Dimension(260, 6));
 		progressBar.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-		loadingStatus = centredLabel("Contacting GitHub…", dim);
+		loadingStatus = centredLabel("Contacting GitHubâ€¦", dim);
 		loadingStatus.setFont(loadingStatus.getFont().deriveFont(11f));
 
 		inner.add(glyph);
@@ -322,7 +322,7 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 				loadingSubtitle.setText(owner.isBlank() ? repo : owner);
 			}
 			if (loadingStatus != null) {
-				loadingStatus.setText("Contacting GitHub…");
+				loadingStatus.setText("Contacting GitHubâ€¦");
 			}
 			if (progressBar != null) {
 				progressBar.setIndeterminate(true);
@@ -363,7 +363,7 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 
 	private String buildHtml(String repo, AtomicBoolean cancelled, Consumer<String> progress) throws IOException {
 
-		progress.accept("Fetching repository details…");
+		progress.accept("Fetching repository detailsâ€¦");
 		JsonNode r = ghJson("repos/" + repo, cancelled);
 		if (r == null || r.path("full_name").isMissingNode()) {
 			throw new IOException("Could not read repository '" + repo + "' via gh.");
@@ -434,7 +434,7 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 
 		// --- Languages -------------------------------------------------------
 		if (!isCancelled(cancelled)) {
-			progress.accept("Reading language breakdown…");
+			progress.accept("Reading language breakdownâ€¦");
 			JsonNode langs = ghJson("repos/" + repo + "/languages", cancelled);
 			if (langs != null && langs.isObject() && langs.size() > 0) {
 				sb.append(section("Languages"));
@@ -458,7 +458,7 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 
 		// --- Latest release --------------------------------------------------
 		if (!isCancelled(cancelled)) {
-			progress.accept("Checking latest release…");
+			progress.accept("Checking latest releaseâ€¦");
 			JsonNode release = ghJson("repos/" + repo + "/releases/latest", cancelled);
 			if (release != null && !text(release, "tag_name").isBlank()) {
 				sb.append(section("Latest release"));
@@ -788,6 +788,16 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 	@Override
 	public String version() {
 		return PluginVersion;
+	}
+	private static String loadVersion() {
+		try (var stream = QuickViewRepoPlugin.class.getResourceAsStream("/plugin.properties")) {
+			if (stream == null) return "unknown";
+			var props = new java.util.Properties();
+			props.load(stream);
+			return props.getProperty("version", "unknown");
+		} catch (java.io.IOException e) {
+			return "unknown";
+		}
 	}
 
 	@Override

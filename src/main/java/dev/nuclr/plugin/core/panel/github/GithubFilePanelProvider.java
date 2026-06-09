@@ -34,7 +34,7 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 	
 	public static final String PluginId = "dev.nuclr.plugin.core.panel.github";
 	private static final String PluginName = "Github Plugin";
-	private static final String PluginVersion = "1.0.0";
+	private static final String PluginVersion = loadVersion();
 	private static final String PluginDescription = "A plugin that provides a file panel for browsing GitHub resources using the GitHub CLI.";
 	private static final String PluginAuthor = "Nuclr Development Team";
 	private static final String PluginLicense = "Apache-2.0";
@@ -64,6 +64,16 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 	@Override
 	public String version() {
 		return PluginVersion;
+	}
+	private static String loadVersion() {
+		try (var stream = GithubFilePanelProvider.class.getResourceAsStream("/plugin.properties")) {
+			if (stream == null) return "unknown";
+			var props = new java.util.Properties();
+			props.load(stream);
+			return props.getProperty("version", "unknown");
+		} catch (java.io.IOException e) {
+			return "unknown";
+		}
 	}
 
 	@Override

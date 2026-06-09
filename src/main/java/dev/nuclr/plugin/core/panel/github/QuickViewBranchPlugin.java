@@ -67,9 +67,9 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p>
  * When a branch (a {@link BranchResource}) is previewed, this plugin shells out
- * to the {@code gh} CLI to gather a broad picture of the branch — its head
+ * to the {@code gh} CLI to gather a broad picture of the branch â€” its head
  * commit, protection, how far it is ahead/behind the default branch, the diff
- * stats of the head commit, and any associated pull requests — and renders it
+ * stats of the head commit, and any associated pull requests â€” and renders it
  * all into a scrollable HTML panel.
  *
  * <p>
@@ -85,7 +85,7 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 
 	public static final String PluginId = "dev.nuclr.plugin.core.panel.github.quickviewbranch";
 	private static final String PluginName = "Github Plugin (Branch Quick View)";
-	private static final String PluginVersion = "1.0.0";
+	private static final String PluginVersion = loadVersion();
 	private static final String PluginDescription = "A quick view plugin for GitHub repository branches.";
 	private static final String PluginAuthor = "Nuclr Development Team";
 	private static final String PluginLicense = "Apache-2.0";
@@ -157,11 +157,11 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 		inner.setOpaque(false);
 		inner.setLayout(new BoxLayout(inner, BoxLayout.Y_AXIS));
 
-		JLabel glyph = centredLabel("⌥", fg); // ⌥ — a small decorative mark
+		JLabel glyph = centredLabel("âŒ¥", fg); // âŒ¥ â€” a small decorative mark
 		glyph.setFont(glyph.getFont().deriveFont(Font.BOLD, 28f));
 		glyph.setForeground(accent);
 
-		loadingTitle = centredLabel("Loading…", fg);
+		loadingTitle = centredLabel("Loadingâ€¦", fg);
 		loadingTitle.setFont(loadingTitle.getFont().deriveFont(Font.BOLD, 18f));
 
 		loadingSubtitle = centredLabel(" ", dim);
@@ -173,7 +173,7 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 		progressBar.setMaximumSize(new Dimension(260, 6));
 		progressBar.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-		loadingStatus = centredLabel("Contacting GitHub…", dim);
+		loadingStatus = centredLabel("Contacting GitHubâ€¦", dim);
 		loadingStatus.setFont(loadingStatus.getFont().deriveFont(11f));
 
 		inner.add(glyph);
@@ -222,7 +222,7 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 			branch = resource.getName();
 		}
 
-		// Not a usable branch reference (e.g. a ".." navigation entry) — let the host
+		// Not a usable branch reference (e.g. a ".." navigation entry) â€” let the host
 		// fall back to its "no preview" provider.
 		if (repo == null || repo.isBlank() || branch == null || branch.isBlank() || "..".equals(branch)) {
 			return false;
@@ -315,7 +315,7 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 				loadingSubtitle.setText(repo);
 			}
 			if (loadingStatus != null) {
-				loadingStatus.setText("Contacting GitHub…");
+				loadingStatus.setText("Contacting GitHubâ€¦");
 			}
 			if (progressBar != null) {
 				progressBar.setIndeterminate(true);
@@ -357,13 +357,13 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 	private String buildHtml(String repo, String branch, AtomicBoolean cancelled, Consumer<String> progress)
 			throws IOException {
 
-		progress.accept("Fetching branch details…");
+		progress.accept("Fetching branch detailsâ€¦");
 		JsonNode branchNode = ghJson("repos/" + repo + "/branches/" + branch, cancelled);
 		if (branchNode == null || branchNode.path("name").isMissingNode()) {
 			throw new IOException("Could not read branch '" + branch + "' in " + repo + " via gh.");
 		}
 
-		progress.accept("Reading repository…");
+		progress.accept("Reading repositoryâ€¦");
 		JsonNode repoNode = ghJson("repos/" + repo, cancelled);
 		String defaultBranch = text(repoNode, "default_branch");
 
@@ -383,7 +383,7 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 		row(sb, "Branch", branch);
 		if (!defaultBranch.isBlank()) {
 			boolean isDefault = defaultBranch.equals(branch);
-			row(sb, "Default branch", defaultBranch + (isDefault ? "  ← this is the default" : ""));
+			row(sb, "Default branch", defaultBranch + (isDefault ? "  â† this is the default" : ""));
 		}
 		row(sb, "Protected", yesNo(branchNode.path("protected").asBoolean(false)));
 		if (!sha.isBlank()) {
@@ -397,7 +397,7 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 
 		// --- Latest commit ---------------------------------------------------
 		if (!commit.isMissingNode()) {
-			progress.accept("Analysing latest commit…");
+			progress.accept("Analysing latest commitâ€¦");
 			sb.append(section("Latest commit"));
 			sb.append("<table>");
 			JsonNode author = commit.path("author");
@@ -422,14 +422,14 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 
 		// --- Head commit diff stats -----------------------------------------
 		if (!sha.isBlank() && !isCancelled(cancelled)) {
-			progress.accept("Computing diff stats…");
+			progress.accept("Computing diff statsâ€¦");
 			JsonNode commitDetail = ghJson("repos/" + repo + "/commits/" + sha, cancelled);
 			if (commitDetail != null) {
 				JsonNode stats = commitDetail.path("stats");
 				sb.append(section("Head commit changes"));
 				sb.append("<table>");
 				row(sb, "Additions", "+" + stats.path("additions").asInt(0));
-				row(sb, "Deletions", "−" + stats.path("deletions").asInt(0));
+				row(sb, "Deletions", "âˆ’" + stats.path("deletions").asInt(0));
 				row(sb, "Total lines", String.valueOf(stats.path("total").asInt(0)));
 				JsonNode files = commitDetail.path("files");
 				row(sb, "Files changed", String.valueOf(files.isArray() ? files.size() : 0));
@@ -439,7 +439,7 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 
 		// --- Comparison to the default branch -------------------------------
 		if (!defaultBranch.isBlank() && !defaultBranch.equals(branch) && !isCancelled(cancelled)) {
-			progress.accept("Comparing with " + defaultBranch + "…");
+			progress.accept("Comparing with " + defaultBranch + "â€¦");
 			JsonNode cmp = ghJson("repos/" + repo + "/compare/" + defaultBranch + "..." + branch, cancelled);
 			if (cmp != null && !cmp.path("status").isMissingNode()) {
 				sb.append(section("Compared with " + esc(defaultBranch)));
@@ -473,7 +473,7 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 
 		// --- Pull requests for this branch ----------------------------------
 		if (!isCancelled(cancelled)) {
-			progress.accept("Loading pull requests…");
+			progress.accept("Loading pull requestsâ€¦");
 			String owner = repo.contains("/") ? repo.substring(0, repo.indexOf('/')) : "";
 			JsonNode prs = ghJson(
 					"repos/" + repo + "/pulls?state=all&per_page=20&head=" + owner + ":" + branch, cancelled);
@@ -765,6 +765,16 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 	@Override
 	public String version() {
 		return PluginVersion;
+	}
+	private static String loadVersion() {
+		try (var stream = QuickViewBranchPlugin.class.getResourceAsStream("/plugin.properties")) {
+			if (stream == null) return "unknown";
+			var props = new java.util.Properties();
+			props.load(stream);
+			return props.getProperty("version", "unknown");
+		} catch (java.io.IOException e) {
+			return "unknown";
+		}
 	}
 
 	@Override
