@@ -34,6 +34,7 @@ public class RepoResource extends NuclrResource {
 		super(Path.of("github-repo"));
 
 		this.getMetadata().put("github-repo", true);
+		this.setFolder(true);
 
 		setName(repo.getDisplayName());
 
