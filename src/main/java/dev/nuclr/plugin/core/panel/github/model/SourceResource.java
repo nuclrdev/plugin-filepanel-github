@@ -17,7 +17,6 @@
 */
 package dev.nuclr.plugin.core.panel.github.model;
 
-import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.file.OpenOption;
 import java.nio.file.Path;
@@ -79,12 +78,13 @@ public final class SourceResource extends NuclrResource {
 		String repo = getMetadata(Repo, "");
 		String branch = getMetadata(Branch, "");
 		String path = getMetadata(SourcePath, "");
-		SourceNode root = BranchSource.peek(repo, branch);
-		SourceNode node = root == null ? null : root.find(path);
-		if (node == null || node.getContent() == null) {
+		// Content is read lazily from the spooled branch archive rather than held in
+		// memory, so large repositories don't exhaust the heap.
+		InputStream content = BranchSource.openFile(repo, branch, path);
+		if (content == null) {
 			throw new java.io.IOException("Source not cached for " + repo + "@" + branch + ":" + path);
 		}
-		return new ByteArrayInputStream(node.getContent());
+		return content;
 	}
 
 	private static String humanSize(long bytes) {

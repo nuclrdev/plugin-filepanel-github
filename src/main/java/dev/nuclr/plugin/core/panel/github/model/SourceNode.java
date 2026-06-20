@@ -27,9 +27,13 @@ import java.util.Map;
  * A node in an in-memory snapshot of a repository branch's source tree.
  *
  * <p>
- * A directory holds its children keyed by leaf name; a file holds its raw bytes
- * in {@link #content}. The whole tree for a branch is built once (from the
- * branch zipball) and cached, so subsequent browsing never hits the network.
+ * A directory holds its children keyed by leaf name. A file holds only its
+ * metadata — its {@link #size} and the {@link #entryName name of its entry}
+ * within the branch zipball; the bytes themselves are <em>not</em> retained.
+ * The whole tree for a branch is built once (from the branch zipball) and
+ * cached, while file content is read lazily from the spooled archive on demand
+ * (see {@code BranchSource.openFile}). Keeping the tree metadata-only is what
+ * lets large repositories be browsed without holding every file in the heap.
  */
 public final class SourceNode {
 
@@ -41,8 +45,11 @@ public final class SourceNode {
 
 	private final boolean directory;
 
-	/** File bytes; {@code null} for directories. */
-	private byte[] content;
+	/** Size in bytes; {@code 0} for directories. */
+	private long size;
+
+	/** Name of this file's entry within the branch zipball; {@code null} for directories. */
+	private String entryName;
 
 	/** Child nodes keyed by leaf name (insertion order; sorted on listing). */
 	private final Map<String, SourceNode> children = new LinkedHashMap<>();
@@ -65,16 +72,20 @@ public final class SourceNode {
 		return directory;
 	}
 
-	public byte[] getContent() {
-		return content;
+	public String getEntryName() {
+		return entryName;
 	}
 
-	public void setContent(byte[] content) {
-		this.content = content;
+	public void setEntryName(String entryName) {
+		this.entryName = entryName;
+	}
+
+	public void setSize(long size) {
+		this.size = size;
 	}
 
 	public long getSize() {
-		return content == null ? 0L : content.length;
+		return size;
 	}
 
 	public Collection<SourceNode> getChildren() {
