@@ -1,6 +1,6 @@
 # 🐙 GitHub File Panel
 
-An official [Nuclr Commander](https://nuclr.dev) plugin (v1, read-only) that adds a **GitHub** root to the file panel, powered by the [GitHub CLI](https://cli.github.com/) (`gh`). Navigate your repositories, browse branches, and inspect source trees without leaving the file manager.
+An official [Nuclr Commander](https://nuclr.dev) plugin that adds a **GitHub** root to the file panel, powered by the [GitHub CLI](https://cli.github.com/) (`gh`). Navigate your repositories, browse branches, inspect source trees, and press **F5 Clone** on a branch to clone it into a writable local file panel on the other side.
 
 ## ✨ What it shows
 
@@ -24,7 +24,7 @@ gh auth login
 
 ## 🧭 Design notes
 
-- **v1 is intentionally minimal and read-only** — it proves plugin mount, `gh` integration, repository listing, and source tree navigation without write operations.
+- **Browsing is read-only.** The single write operation is **F5 Clone**, offered on a branch node: it clones that branch into the directory currently shown by the *other* panel. The clone runs off the UI thread, so Commander stays responsive.
 - Navigation is tag-based: resources carry `github-repo`, branch, and source-dir tags so the provider can route list and quick-view calls correctly.
 - The plugin lazily checks for `gh` availability on `init()` and disables itself gracefully if the CLI is missing.
 
@@ -41,7 +41,7 @@ Nuclr Commander verifies the RSA-SHA256 signature against `nuclr-cert.pem` on lo
 
 ## ⚙️ How it works
 
-`GithubFilePanelProvider` implements `FilePanelNuclrPlugin`. All data fetching goes through the `gh/` layer, which shells out to `gh repo list`, `gh api /repos/{owner}/{repo}/branches`, and `gh api /repos/{owner}/{repo}/git/trees/{sha}`. Responses are parsed via Jackson. `QuickViewRepoPlugin` and `QuickViewBranchPlugin` provide inline quick-view panels for the repo root and branch level respectively.
+`GithubFilePanelProvider` implements `FilePanelNuclrPlugin`. All data fetching goes through the `gh/` layer, which shells out to `gh repo list`, `gh api /repos/{owner}/{repo}/branches`, and `gh api /repos/{owner}/{repo}/git/trees/{sha}`. Responses are parsed via Jackson. `QuickViewRepoPlugin` and `QuickViewBranchPlugin` provide inline quick-view panels for the repo root and branch level respectively. `GitHubClone` resolves the opposite panel's local directory and runs `gh repo clone` for the selected branch there.
 
 ## 🗂️ Source layout
 
@@ -56,6 +56,7 @@ src/main/java/dev/nuclr/plugin/core/panel/github/
 │   ├── GitHubRepos.java           repository listing
 │   ├── GitHubBranches.java        branch listing
 │   ├── GitHubSourceListing.java   source directory listing
+│   ├── GitHubClone.java           F5 branch clone into the opposite panel
 │   ├── GithubSource.java          source tree model
 │   └── BranchSource.java          branch tree model
 └── model/

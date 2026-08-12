@@ -2,15 +2,21 @@ package dev.nuclr.plugin.core.panel.github;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.JOptionPane;
+import javax.swing.SwingUtilities;
 
+import dev.nuclr.platform.plugin.BaseNuclrPlugin;
 import dev.nuclr.platform.plugin.FilePanelNuclrPlugin;
+import dev.nuclr.platform.plugin.NuclrMenuResource;
+import dev.nuclr.platform.plugin.NuclrPluginCallback;
 import dev.nuclr.platform.plugin.NuclrPluginContext;
 import dev.nuclr.platform.plugin.NuclrResource;
 import dev.nuclr.plugin.core.panel.github.gh.Gh;
 import dev.nuclr.plugin.core.panel.github.gh.GitHubBranches;
+import dev.nuclr.plugin.core.panel.github.gh.GitHubClone;
 import dev.nuclr.plugin.core.panel.github.gh.GitHubRepos;
 import dev.nuclr.plugin.core.panel.github.gh.GitHubSourceListing;
 import dev.nuclr.plugin.core.panel.github.model.BranchResource;
@@ -33,6 +39,7 @@ import lombok.extern.slf4j.Slf4j;
 public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 	
 	public static final String PluginId = "dev.nuclr.plugin.core.panel.github";
+	private static final String CloneAction = "github.branch.clone";
 	private static final String PluginName = "Github Plugin";
 	private static final String PluginVersion = loadVersion();
 	private static final String PluginDescription = "A plugin that provides a file panel for browsing GitHub resources using the GitHub CLI.";
@@ -153,6 +160,19 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 	}
 
 	@Override
+	public List<NuclrMenuResource> menuItems(NuclrResource resource) {
+		// While branches are displayed, selectedResource is the repository that was
+		// opened to produce the list. Register F5 for that stable panel context as
+		// well as for a branch under the cursor; act() still refuses to run unless
+		// it receives a real BranchResource.
+		return branchResource(resource) != null
+				|| hasTag(selectedResource, "github-repo")
+				|| branchResource(selectedResource) != null
+				? List.of(new NuclrMenuResource("Clone", "F5", CloneAction))
+				: List.of();
+	}
+
+	@Override
 	public void init() {
 
 		//  TODO: check if gh CLI is available, if not, show a warning and disable the plugin's functionality
@@ -238,7 +258,12 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 	}
 
 	private void showError(String title, String message) {
-		JOptionPane.showMessageDialog(null, message, title, JOptionPane.ERROR_MESSAGE);
+		Runnable show = () -> JOptionPane.showMessageDialog(null, message, title, JOptionPane.ERROR_MESSAGE);
+		if (SwingUtilities.isEventDispatchThread()) {
+			show.run();
+		} else {
+			SwingUtilities.invokeLater(show);
+		}
 	}
 
 	@Override
@@ -309,6 +334,66 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 	public String getSelectionSummaryText(List<NuclrResource> selectedResources) {
 		// TODO Auto-generated method stub
 		return null;
+	}
+
+	@Override
+	public void act(
+			BaseNuclrPlugin other,
+			String actionType,
+			List<NuclrResource> selectedResources,
+			NuclrResource focusedResource,
+			Map<String, Object> data,
+			NuclrPluginCallback callback) {
+
+		if (!CloneAction.equals(actionType)) {
+			return;
+		}
+
+		NuclrResource branch = branchResource(focusedResource);
+		if (branch == null && selectedResources != null) {
+			branch = selectedResources.stream()
+					.map(GithubFilePanelProvider::branchResource)
+					.filter(java.util.Objects::nonNull)
+					.findFirst()
+					.orElse(null);
+		}
+		if (branch == null) {
+			branch = branchResource(selectedResource);
+		}
+
+		Path destination = GitHubClone.destinationDirectory(other);
+		if (branch == null || destination == null) {
+			return;
+		}
+
+		String repo = branch.getMetadata(BranchResource.Repo, "");
+		String branchName = branch.getMetadata(GitHubBranches.BranchName, "");
+		if (repo.isBlank() || branchName.isBlank()) {
+			return;
+		}
+
+		final String destinationPluginUuid = other.uuid();
+		GitHubClone.cloneBranch(repo, branchName, destination, callback,
+				() -> {
+					if (context != null) {
+						context.getEventBus().emit(
+								"refresh.plugin.file.panel",
+								Map.of("plugin.uuid", destinationPluginUuid),
+								null);
+					}
+				},
+				error -> showError("Clone failed", error.getMessage()));
+	}
+
+	private static NuclrResource branchResource(NuclrResource resource) {
+		return hasTag(resource, BranchResource.Tag) ? resource : null;
+	}
+
+	private static boolean hasTag(NuclrResource resource, String tag) {
+		return resource != null
+				&& resource.getPath() != null
+				&& resource.getPath().getFileName() != null
+				&& tag.equals(resource.getPath().getFileName().toString());
 	}
 
 }

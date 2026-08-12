@@ -112,25 +112,6 @@
 				<version>3.3.1</version>
 				<executions>
 					<execution>
-						<id>copy-plugin-json</id>
-						<phase>package</phase>
-						<goals>
-							<goal>copy-resources</goal>
-						</goals>
-						<configuration>
-							<outputDirectory>${project.build.directory}/plugin</outputDirectory>
-							<resources>
-								<resource>
-									<directory>src/main/resources</directory>
-									<includes>
-										<include>plugin.json</include>
-									</includes>
-								</resource>
-							</resources>
-						</configuration>
-					</execution>
-
-					<execution>
 						<id>copy-plugin-jar</id>
 						<phase>package</phase>
 						<goals>
