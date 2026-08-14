@@ -51,8 +51,8 @@ import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.event.HyperlinkEvent;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import dev.nuclr.platform.NuclrThemeScheme;
 import dev.nuclr.platform.plugin.NuclrPluginContext;
@@ -84,14 +84,6 @@ import lombok.extern.slf4j.Slf4j;
 public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 
 	public static final String PluginId = "dev.nuclr.plugin.core.panel.github.quickviewbranch";
-	private static final String PluginName = "Github Plugin (Branch Quick View)";
-	private static final String PluginVersion = loadVersion();
-	private static final String PluginDescription = "A quick view plugin for GitHub repository branches.";
-	private static final String PluginAuthor = "Nuclr Development Team";
-	private static final String PluginLicense = "Apache-2.0";
-	private static final String PluginWebsite = "https://nuclr.dev";
-	private static final String PluginPageUrl = "https://nuclr.dev/plugins/core/filepanel-github.html";
-	private static final String PluginDocUrl = PluginPageUrl;
 
 	private static final String CARD_LOADING = "loading";
 	private static final String CARD_CONTENT = "content";
@@ -299,10 +291,6 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 		this.theme = themeScheme;
 	}
 
-	@Override
-	public int priority() {
-		return 1;
-	}
 
 	// --------------------------------------------------------- card switching ---
 
@@ -748,68 +736,10 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 	// ------------------------------------------------------------- metadata ---
 
 	@Override
-	public String id() {
-		return PluginId;
-	}
-
-	@Override
 	public String uuid() {
 		return PluginId;
 	}
 
-	@Override
-	public String name() {
-		return PluginName;
-	}
 
-	@Override
-	public String version() {
-		return PluginVersion;
-	}
-	private static String loadVersion() {
-		try (var stream = QuickViewBranchPlugin.class.getResourceAsStream("/plugin.properties")) {
-			if (stream == null) return "unknown";
-			var props = new java.util.Properties();
-			props.load(stream);
-			return props.getProperty("version", "unknown");
-		} catch (java.io.IOException e) {
-			return "unknown";
-		}
-	}
-
-	@Override
-	public String description() {
-		return PluginDescription;
-	}
-
-	@Override
-	public String author() {
-		return PluginAuthor;
-	}
-
-	@Override
-	public String license() {
-		return PluginLicense;
-	}
-
-	@Override
-	public String website() {
-		return PluginWebsite;
-	}
-
-	@Override
-	public String pageUrl() {
-		return PluginPageUrl;
-	}
-
-	@Override
-	public String docUrl() {
-		return PluginDocUrl;
-	}
-
-	@Override
-	public Developer developer() {
-		return Developer.Official;
-	}
 
 }

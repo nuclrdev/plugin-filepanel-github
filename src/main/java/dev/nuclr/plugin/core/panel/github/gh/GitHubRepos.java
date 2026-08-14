@@ -7,7 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 import dev.nuclr.platform.plugin.FilePanelNuclrPlugin.NuclrResourceData;
 import dev.nuclr.plugin.core.panel.github.model.RepoResource;

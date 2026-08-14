@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import dev.nuclr.platform.plugin.BaseNuclrPlugin;
+import dev.nuclr.platform.plugin.FilePanelNuclrPlugin;
 import dev.nuclr.platform.plugin.NuclrPluginCallback;
 import lombok.extern.slf4j.Slf4j;
 
@@ -44,7 +45,7 @@ public final class GitHubClone {
 	 * deliberately rejected.
 	 */
 	public static Path destinationDirectory(BaseNuclrPlugin other) {
-		if (other == null || !other.is(BaseNuclrPlugin.Type.FilePanel)) {
+		if (!(other instanceof FilePanelNuclrPlugin)) {
 			return null;
 		}
 

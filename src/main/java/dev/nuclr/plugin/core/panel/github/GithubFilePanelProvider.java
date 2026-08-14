@@ -38,16 +38,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 	
-	public static final String PluginId = "dev.nuclr.plugin.core.panel.github";
 	private static final String CloneAction = "github.branch.clone";
-	private static final String PluginName = "Github Plugin";
-	private static final String PluginVersion = loadVersion();
-	private static final String PluginDescription = "A plugin that provides a file panel for browsing GitHub resources using the GitHub CLI.";
-	private static final String PluginAuthor = "Nuclr Development Team";
-	private static final String PluginLicense = "Apache-2.0";
-	private static final String PluginWebsite = "https://nuclr.dev";
-	private static final String PluginPageUrl = "https://nuclr.dev/plugins/core/filepanel-github.html";
-	private static final String PluginDocUrl = PluginPageUrl;	
 
 	private boolean focused = false;
 	private NuclrPluginContext context;
@@ -58,65 +49,6 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 	
 	private NuclrResource selectedResource;
 	
-	@Override
-	public String id() {
-		return PluginId;
-	}
-
-	@Override
-	public String name() {
-		return PluginName;
-	}
-
-	@Override
-	public String version() {
-		return PluginVersion;
-	}
-	private static String loadVersion() {
-		try (var stream = GithubFilePanelProvider.class.getResourceAsStream("/plugin.properties")) {
-			if (stream == null) return "unknown";
-			var props = new java.util.Properties();
-			props.load(stream);
-			return props.getProperty("version", "unknown");
-		} catch (java.io.IOException e) {
-			return "unknown";
-		}
-	}
-
-	@Override
-	public String description() {
-		return PluginDescription;
-	}
-
-	@Override
-	public String author() {
-		return PluginAuthor;
-	}
-
-	@Override
-	public String license() {
-		return PluginLicense;
-	}
-
-	@Override
-	public String website() {
-		return PluginWebsite;
-	}
-
-	@Override
-	public String pageUrl() {
-		return PluginPageUrl;
-	}
-
-	@Override
-	public String docUrl() {
-		return PluginDocUrl;
-	}
-
-	@Override
-	public Developer developer() {
-		return Developer.Official;
-	}
 
 	@Override
 	public boolean onFocusGained() {
@@ -395,5 +327,6 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 				&& resource.getPath().getFileName() != null
 				&& tag.equals(resource.getPath().getFileName().toString());
 	}
+
 
 }

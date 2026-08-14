@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "version": "${project.version}",
+  "platformSdkVersion": "4.0.0",
+	"plugins": [
+		{
+			"class": "dev.nuclr.plugin.core.panel.github.GithubFilePanelProvider",
+			"type": "FilePanel",
+			"id": "dev.nuclr.plugin.core.panel.github",
+			"name": "Github Plugin",
+			"version": "${project.version}",
+			"description": "A plugin that provides a file panel for browsing GitHub resources using the GitHub CLI.",
+			"author": "Nuclr Development Team",
+			"license": "Apache-2.0",
+			"website": "https://nuclr.dev",
+			"pageUrl": "https://nuclr.dev/plugins/core/filepanel-github.html",
+			"docUrl": "https://nuclr.dev/plugins/core/filepanel-github.html",
+			"developer": "Official",
+			"singleton": true
+		},
+		{
+			"class": "dev.nuclr.plugin.core.panel.github.QuickViewRepoPlugin",
+			"type": "QuickView",
+			"id": "dev.nuclr.plugin.core.panel.github.quickviewrepo",
+			"name": "Github Plugin (Repository Quick View)",
+			"version": "${project.version}",
+			"description": "A quick view plugin for GitHub repositories.",
+			"author": "Nuclr Development Team",
+			"license": "Apache-2.0",
+			"website": "https://nuclr.dev",
+			"pageUrl": "https://nuclr.dev/plugins/core/filepanel-github.html",
+			"docUrl": "https://nuclr.dev/plugins/core/filepanel-github.html",
+			"developer": "Official",
+			"singleton": true,
+			"priority": 1
+		},
+		{
+			"class": "dev.nuclr.plugin.core.panel.github.QuickViewBranchPlugin",
+			"type": "QuickView",
+			"id": "dev.nuclr.plugin.core.panel.github.quickviewbranch",
+			"name": "Github Plugin (Branch Quick View)",
+			"version": "${project.version}",
+			"description": "A quick view plugin for GitHub repository branches.",
+			"author": "Nuclr Development Team",
+			"license": "Apache-2.0",
+			"website": "https://nuclr.dev",
+			"pageUrl": "https://nuclr.dev/plugins/core/filepanel-github.html",
+			"docUrl": "https://nuclr.dev/plugins/core/filepanel-github.html",
+			"developer": "Official",
+			"singleton": true,
+			"priority": 1
+		}
+	]
+}
