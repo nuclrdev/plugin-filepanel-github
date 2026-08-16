@@ -13,8 +13,8 @@
 			"author": "Nuclr Development Team",
 			"license": "Apache-2.0",
 			"website": "https://nuclr.dev",
-			"pageUrl": "https://nuclr.dev/plugins/core/filepanel-github.html",
-			"docUrl": "https://nuclr.dev/plugins/core/filepanel-github.html",
+			"pageUrl": "https://github.com/nuclrdev/plugin-filepanel-github",
+			"docUrl": "https://github.com/nuclrdev/plugin-filepanel-github",
 			"developer": "Official",
 			"singleton": true
 		},
@@ -28,8 +28,8 @@
 			"author": "Nuclr Development Team",
 			"license": "Apache-2.0",
 			"website": "https://nuclr.dev",
-			"pageUrl": "https://nuclr.dev/plugins/core/filepanel-github.html",
-			"docUrl": "https://nuclr.dev/plugins/core/filepanel-github.html",
+			"pageUrl": "https://github.com/nuclrdev/plugin-filepanel-github",
+			"docUrl": "https://github.com/nuclrdev/plugin-filepanel-github",
 			"developer": "Official",
 			"singleton": true,
 			"priority": 1
@@ -44,8 +44,8 @@
 			"author": "Nuclr Development Team",
 			"license": "Apache-2.0",
 			"website": "https://nuclr.dev",
-			"pageUrl": "https://nuclr.dev/plugins/core/filepanel-github.html",
-			"docUrl": "https://nuclr.dev/plugins/core/filepanel-github.html",
+			"pageUrl": "https://github.com/nuclrdev/plugin-filepanel-github",
+			"docUrl": "https://github.com/nuclrdev/plugin-filepanel-github",
 			"developer": "Official",
 			"singleton": true,
 			"priority": 1
