@@ -28,10 +28,11 @@ import dev.nuclr.plugin.core.panel.github.gh.BranchSource;
  * A single entry (directory or file) inside a branch's cached source tree.
  *
  * <p>
- * Directories and files use distinct path tags so the host's
- * {@code supports(path)} probe can decide which entries are navigable
- * (directories) versus opened as content (files). File content is served lazily
- * from the in-memory {@link BranchSource} cache via {@link #openInputStream}.
+ * A directory carries a path tag so the host's {@code supports(path)} probe can recognise it as
+ * navigable. A file carries no path at all: there is no local file behind it, and claiming one
+ * would only mislead the quick-view plugins, which read a path-less resource through
+ * {@link #openInputStream} but try to open a non-null path directly. File content is served
+ * lazily from the in-memory {@link BranchSource} cache.
  */
 public final class SourceResource extends NuclrResource {
 
@@ -39,8 +40,6 @@ public final class SourceResource extends NuclrResource {
 
 	/** Path tag for a navigable source directory. */
 	public static final String DirTag = "github-source-dir";
-	/** Path tag for a (non-navigable) source file. */
-	public static final String FileTag = "github-source-file";
 
 	/** Metadata keys carrying enough context to resolve the node from the cache. */
 	public static final String Repo = "github-source-repo";
@@ -54,7 +53,7 @@ public final class SourceResource extends NuclrResource {
 
 	public SourceResource(String repo, String branch, SourceNode node) {
 
-		super(Path.of(node.isDirectory() ? DirTag : FileTag));
+		super(node.isDirectory() ? Path.of(DirTag) : null);
 
 		setName(node.getName());
 		setFolder(node.isDirectory());
