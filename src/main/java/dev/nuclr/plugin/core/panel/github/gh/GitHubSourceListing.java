@@ -18,6 +18,7 @@
 package dev.nuclr.plugin.core.panel.github.gh;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import dev.nuclr.platform.plugin.FilePanelNuclrPlugin.NuclrResourceData;
 import dev.nuclr.platform.plugin.NuclrResource;
@@ -42,14 +43,29 @@ public final class GitHubSourceListing {
 	 * directory. The {@code ".."} entry returns to the repository's branch list.
 	 */
 	public static NuclrResourceData openBranch(NuclrResource branch) {
+		return openBranch(branch, null);
+	}
+
+	/**
+	 * Open a branch: ensure its full source is fetched/cached, then list the root
+	 * directory. The {@code ".."} entry returns to the repository's branch list.
+	 */
+	public static NuclrResourceData openBranch(NuclrResource branch, AtomicBoolean cancelled) {
 
 		String repo = branch.getMetadata(BranchResource.Repo, "");
 		String branchName = branch.getMetadata(GitHubBranches.BranchName, "");
 
 		try {
-			SourceNode root = BranchSource.getOrFetch(repo, branchName);
+			SourceNode root = BranchSource.getOrFetch(repo, branchName, cancelled);
 			NuclrResource up = upToBranches(repo);
 			return list(repo, branchName, root, up);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			log.warn("Source fetch for {}@{} was interrupted", repo, branchName);
+			return new NuclrResourceData();
+		} catch (GhCancelledException e) {
+			log.debug("Source fetch for {}@{} was cancelled", repo, branchName);
+			return new NuclrResourceData();
 		} catch (Exception e) {
 			log.error("Failed to fetch source for {}@{}: {}", repo, branchName, e.getMessage(), e);
 			return new NuclrResourceData();
@@ -61,6 +77,14 @@ public final class GitHubSourceListing {
 	 * entry returns to the parent directory, or to the branch root when at depth 1.
 	 */
 	public static NuclrResourceData openDirectory(NuclrResource dir) {
+		return openDirectory(dir, null);
+	}
+
+	/**
+	 * Open a directory within an already-cached branch source tree. The {@code ".."}
+	 * entry returns to the parent directory, or to the branch root when at depth 1.
+	 */
+	public static NuclrResourceData openDirectory(NuclrResource dir, AtomicBoolean cancelled) {
 
 		String repo = dir.getMetadata(SourceResource.Repo, "");
 		String branchName = dir.getMetadata(SourceResource.Branch, "");
@@ -69,7 +93,7 @@ public final class GitHubSourceListing {
 		SourceNode root = BranchSource.peek(repo, branchName);
 		if (root == null) {
 			// Cache evicted/lost — re-open the branch to repopulate it.
-			return openBranch(new BranchResource(repo, branchName));
+			return openBranch(new BranchResource(repo, branchName), cancelled);
 		}
 
 		SourceNode node = root.find(path);

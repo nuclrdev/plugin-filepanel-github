@@ -24,12 +24,8 @@ import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridBagLayout;
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -60,6 +56,7 @@ import dev.nuclr.platform.NuclrThemeScheme;
 import dev.nuclr.platform.plugin.NuclrPluginContext;
 import dev.nuclr.platform.plugin.NuclrResource;
 import dev.nuclr.platform.plugin.QuickViewNuclrPlugin;
+import dev.nuclr.plugin.core.panel.github.gh.Gh;
 import dev.nuclr.plugin.core.panel.github.gh.GitHubRepos;
 import lombok.extern.slf4j.Slf4j;
 
@@ -69,9 +66,9 @@ import lombok.extern.slf4j.Slf4j;
  * <p>
  * When a repository (a {@code RepoResource}, identified by the {@code github-repo}
  * path tag) is previewed, this plugin shells out to the {@code gh} CLI to gather
- * a broad picture of the repo â€” description, owner, visibility, default branch,
+ * a broad picture of the repo — description, owner, visibility, default branch,
  * stats (stars/forks/issues), topics, language breakdown, enabled features and
- * the latest release â€” and renders it into a scrollable HTML panel.
+ * the latest release — and renders it into a scrollable HTML panel.
  *
  * <p>
  * The view is a {@link CardLayout} with an animated <em>loading</em> card and a
@@ -152,10 +149,10 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 		inner.setOpaque(false);
 		inner.setLayout(new BoxLayout(inner, BoxLayout.Y_AXIS));
 
-		JLabel glyph = centredLabel("â—ˆ", accent);
+		JLabel glyph = centredLabel("◈", accent);
 		glyph.setFont(glyph.getFont().deriveFont(Font.BOLD, 28f));
 
-		loadingTitle = centredLabel("Loadingâ€¦", fg);
+		loadingTitle = centredLabel("Loading…", fg);
 		loadingTitle.setFont(loadingTitle.getFont().deriveFont(Font.BOLD, 18f));
 
 		loadingSubtitle = centredLabel(" ", dim);
@@ -167,7 +164,7 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 		progressBar.setMaximumSize(new Dimension(260, 6));
 		progressBar.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-		loadingStatus = centredLabel("Contacting GitHubâ€¦", dim);
+		loadingStatus = centredLabel("Contacting GitHub…", dim);
 		loadingStatus.setFont(loadingStatus.getFont().deriveFont(11f));
 
 		inner.add(glyph);
@@ -310,7 +307,7 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 				loadingSubtitle.setText(owner.isBlank() ? repo : owner);
 			}
 			if (loadingStatus != null) {
-				loadingStatus.setText("Contacting GitHubâ€¦");
+				loadingStatus.setText("Contacting GitHub…");
 			}
 			if (progressBar != null) {
 				progressBar.setIndeterminate(true);
@@ -351,7 +348,7 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 
 	private String buildHtml(String repo, AtomicBoolean cancelled, Consumer<String> progress) throws IOException {
 
-		progress.accept("Fetching repository detailsâ€¦");
+		progress.accept("Fetching repository details…");
 		JsonNode r = ghJson("repos/" + repo, cancelled);
 		if (r == null || r.path("full_name").isMissingNode()) {
 			throw new IOException("Could not read repository '" + repo + "' via gh.");
@@ -422,7 +419,7 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 
 		// --- Languages -------------------------------------------------------
 		if (!isCancelled(cancelled)) {
-			progress.accept("Reading language breakdownâ€¦");
+			progress.accept("Reading language breakdown…");
 			JsonNode langs = ghJson("repos/" + repo + "/languages", cancelled);
 			if (langs != null && langs.isObject() && langs.size() > 0) {
 				sb.append(section("Languages"));
@@ -446,7 +443,7 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 
 		// --- Latest release --------------------------------------------------
 		if (!isCancelled(cancelled)) {
-			progress.accept("Checking latest releaseâ€¦");
+			progress.accept("Checking latest release…");
 			JsonNode release = ghJson("repos/" + repo + "/releases/latest", cancelled);
 			if (release != null && !text(release, "tag_name").isBlank()) {
 				sb.append(section("Latest release"));
@@ -499,51 +496,13 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 			return null;
 		}
 		try {
-			String out = runGh(List.of("api", endpoint), cancelled);
+			String out = Gh.run(List.of("api", endpoint), cancelled);
 			return out.isBlank() ? null : MAPPER.readTree(out);
 		} catch (Exception e) {
-			log.warn("gh api {} failed: {}", endpoint, e.getMessage());
-			return null;
-		}
-	}
-
-	private static String runGh(List<String> args, AtomicBoolean cancelled)
-			throws IOException, InterruptedException {
-
-		List<String> command = new ArrayList<>(args.size() + 1);
-		command.add("gh");
-		command.addAll(args);
-
-		Process process = new ProcessBuilder(command).start();
-
-		// Drain stderr on a side thread so a chatty gh can't block on a full pipe.
-		StringBuilder stderr = new StringBuilder();
-		Thread pump = new Thread(() -> drain(process.getErrorStream(), stderr), "gh-repo-stderr");
-		pump.setDaemon(true);
-		pump.start();
-
-		String stdout;
-		try (InputStream in = process.getInputStream()) {
-			stdout = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-		}
-
-		int exit = process.waitFor();
-		pump.join();
-
-		if (exit != 0) {
-			throw new IOException("gh " + String.join(" ", args) + " exited " + exit + ": " + stderr.toString().strip());
-		}
-		return stdout;
-	}
-
-	private static void drain(InputStream in, StringBuilder sink) {
-		try (var reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
-			String line;
-			while ((line = reader.readLine()) != null) {
-				sink.append(line).append('\n');
+			if (!isCancelled(cancelled)) {
+				log.warn("gh api {} failed: {}", endpoint, e.getMessage());
 			}
-		} catch (IOException ignored) {
-			// best-effort diagnostics only
+			return null;
 		}
 	}
 

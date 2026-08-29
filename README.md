@@ -41,7 +41,7 @@ Nuclr Commander verifies the RSA-SHA256 signature against `nuclr-cert.pem` on lo
 
 ## ⚙️ How it works
 
-`GithubFilePanelProvider` implements `FilePanelNuclrPlugin`. All data fetching goes through the `gh/` layer, which shells out to `gh repo list`, `gh api /repos/{owner}/{repo}/branches`, and `gh api /repos/{owner}/{repo}/git/trees/{sha}`. Responses are parsed via Jackson. `QuickViewRepoPlugin` and `QuickViewBranchPlugin` provide inline quick-view panels for the repo root and branch level respectively. `GitHubClone` resolves the opposite panel's local directory and runs `gh repo clone` for the selected branch there.
+`GithubFilePanelProvider` implements `FilePanelNuclrPlugin`. All data fetching goes through the `gh/` layer, and every text-producing command runs through `Gh.run`, a shared runner that keeps `gh`'s diagnostics off stdout, applies a timeout, and honours the panel's cancellation flag. Repository discovery uses the paginated `/user/repos` API with owner, collaborator, and organization-member affiliations; branch browsing uses the branches API; and source trees come from a lazily read, temporary branch zipball. Responses are parsed via Jackson. `QuickViewRepoPlugin` and `QuickViewBranchPlugin` provide inline quick-view panels for the repo root and branch level respectively. `GitHubClone` resolves the opposite panel's local directory and runs `gh repo clone` for the selected branch there, respecting the Git protocol configured in GitHub CLI.
 
 ## 🗂️ Source layout
 
@@ -52,30 +52,28 @@ src/main/java/dev/nuclr/plugin/core/panel/github/
 ├── QuickViewBranchPlugin.java     quick-view provider for branch details
 ├── ResourcesHelper.java           resource tagging and path utilities
 ├── gh/
-│   ├── Gh.java                    CLI runner wrapper
+│   ├── Gh.java                    shared cancellable/timed CLI runner
 │   ├── GitHubRepos.java           repository listing
 │   ├── GitHubBranches.java        branch listing
 │   ├── GitHubSourceListing.java   source directory listing
 │   ├── GitHubClone.java           F5 branch clone into the opposite panel
-│   ├── GithubSource.java          source tree model
-│   └── BranchSource.java          branch tree model
+│   └── BranchSource.java          cached branch archive and source tree
 └── model/
     ├── RootResource.java
     ├── RepoResource.java
     ├── BranchResource.java
     ├── SourceResource.java
-    ├── SourceNode.java
-    └── TreeEntry.java
+    └── SourceNode.java
 ```
 
 ## 📚 Dependencies
 
 | Library | Version | Purpose |
 |---|---|---|
-| `dev.nuclr:platform-sdk` | `3.0.1` | Nuclr platform interfaces |
-| `jackson-databind` | `2.21.1` | JSON parsing of `gh` CLI output |
-| `commons-io` | `2.22.0` | File utility helpers |
-| `commons-lang3` | `3.20.0` | String utilities |
+| `dev.nuclr:platform-sdk` | `4.0.0` | Nuclr platform interfaces |
+| `jackson-databind` | `3.2.1` | JSON parsing of `gh` CLI output |
+| `slf4j-api` | `2.0.17` | Logging API supplied by Commander |
+| `junit-jupiter` | `5.11.4` | Unit tests (test scope only) |
 
 ## 📜 License
 

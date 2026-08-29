@@ -101,13 +101,7 @@ public final class GitHubClone {
 
 	static void runClone(String repo, String branch, Path destination) throws IOException, InterruptedException {
 		Path cloneDirectory = destination.resolve(repositoryName(repo));
-		List<String> command = List.of(
-				"gh", "repo", "clone",
-				httpsCloneUrl(repo),
-				cloneDirectory.toAbsolutePath().toString(),
-				"--",
-				"--branch", branch,
-				"--single-branch");
+		List<String> command = cloneCommand(repo, branch, cloneDirectory);
 
 		Process process = new ProcessBuilder(command)
 				.redirectErrorStream(true)
@@ -134,17 +128,21 @@ public final class GitHubClone {
 		}
 	}
 
+	static List<String> cloneCommand(String repo, String branch, Path cloneDirectory) {
+		return List.of(
+				"gh", "repo", "clone",
+				repo.strip(),
+				cloneDirectory.toAbsolutePath().toString(),
+				"--",
+				"--branch", branch,
+				"--single-branch");
+	}
+
 	static String repositoryName(String repo) {
-		int separator = repo.lastIndexOf('/');
-		String name = separator >= 0 ? repo.substring(separator + 1) : repo;
+		String normalized = repo.strip();
+		int separator = normalized.lastIndexOf('/');
+		String name = separator >= 0 ? normalized.substring(separator + 1) : normalized;
 		return name.endsWith(".git") ? name.substring(0, name.length() - 4) : name;
 	}
 
-	static String httpsCloneUrl(String repo) {
-		String normalized = repo.strip();
-		if (normalized.startsWith("https://") || normalized.startsWith("http://")) {
-			return normalized;
-		}
-		return "https://github.com/" + normalized + (normalized.endsWith(".git") ? "" : ".git");
-	}
 }

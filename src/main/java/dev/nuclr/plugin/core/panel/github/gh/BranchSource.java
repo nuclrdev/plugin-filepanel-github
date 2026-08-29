@@ -24,9 +24,11 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
@@ -59,6 +61,8 @@ public final class BranchSource {
 	private record Branch(SourceNode root, Path archive) {
 	}
 
+	private static final long WATCHDOG_POLL_MILLIS = 100;
+
 	private static final ConcurrentMap<String, Branch> cache = new ConcurrentHashMap<>();
 
 	private BranchSource() {
@@ -79,6 +83,16 @@ public final class BranchSource {
 	 * first access. Concurrent callers for the same branch fetch at most once.
 	 */
 	public static SourceNode getOrFetch(String repo, String branch) throws IOException, InterruptedException {
+		return getOrFetch(repo, branch, null);
+	}
+
+	/**
+	 * Return the cached source-tree root for the branch, fetching and caching it on
+	 * first access. Concurrent callers for the same branch fetch at most once, and
+	 * a fetch in progress is abandoned as soon as {@code cancelled} is raised.
+	 */
+	public static SourceNode getOrFetch(String repo, String branch, AtomicBoolean cancelled)
+			throws IOException, InterruptedException {
 		Branch cached = cache.get(key(repo, branch));
 		if (cached != null) {
 			return cached.root();
@@ -86,7 +100,7 @@ public final class BranchSource {
 		// computeIfAbsent can't propagate checked exceptions, so fetch outside it and
 		// only publish on success. A redundant concurrent fetch is harmless, but its
 		// spooled archive must be deleted so it doesn't leak on disk.
-		Branch fetched = fetch(repo, branch);
+		Branch fetched = fetch(repo, branch, cancelled);
 		Branch existing = cache.putIfAbsent(key(repo, branch), fetched);
 		if (existing != null) {
 			deleteQuietly(fetched.archive());
@@ -111,23 +125,28 @@ public final class BranchSource {
 		}
 
 		ZipFile zip = new ZipFile(b.archive().toFile());
-		ZipEntry entry = zip.getEntry(node.getEntryName());
-		if (entry == null) {
-			zip.close();
-			return null;
-		}
-		// Close the ZipFile once the entry stream is closed by the caller.
-		InputStream raw = zip.getInputStream(entry);
-		return new java.io.FilterInputStream(raw) {
-			@Override
-			public void close() throws IOException {
-				try {
-					super.close();
-				} finally {
-					zip.close();
-				}
+		try {
+			ZipEntry entry = zip.getEntry(node.getEntryName());
+			if (entry == null) {
+				zip.close();
+				return null;
 			}
-		};
+			// Close the ZipFile once the entry stream is closed by the caller.
+			InputStream raw = zip.getInputStream(entry);
+			return new java.io.FilterInputStream(raw) {
+				@Override
+				public void close() throws IOException {
+					try {
+						super.close();
+					} finally {
+						zip.close();
+					}
+				}
+			};
+		} catch (IOException | RuntimeException e) {
+			zip.close();
+			throw e;
+		}
 	}
 
 	/** Drop a cached branch and delete its spooled archive (e.g. to force a re-fetch). */
@@ -138,11 +157,26 @@ public final class BranchSource {
 		}
 	}
 
-	private static Branch fetch(String repo, String branch) throws IOException, InterruptedException {
+	/** Drop every cached branch and delete all spooled archives. */
+	public static void clear() {
+		cache.forEach((key, branch) -> {
+			if (cache.remove(key, branch)) {
+				deleteQuietly(branch.archive());
+			}
+		});
+	}
+
+	private static Branch fetch(String repo, String branch, AtomicBoolean cancelled)
+			throws IOException, InterruptedException {
+
+		if (isCancelled(cancelled)) {
+			throw new GhCancelledException("Source fetch was cancelled");
+		}
 
 		log.info("Fetching source zipball for {}@{}", repo, branch);
 
 		Process process = new ProcessBuilder("gh", "api", "repos/" + repo + "/zipball/" + branch).start();
+		process.getOutputStream().close();
 
 		// Drain stderr on a separate thread so a chatty gh can't deadlock the binary
 		// stdout stream we're reading the archive from.
@@ -159,13 +193,22 @@ public final class BranchSource {
 		// cleanly without materialising a multi-hundred-MB byte[].
 		Path archive = Files.createTempFile("nuclr-gh-zipball-", ".zip");
 		archive.toFile().deleteOnExit();
+
+		// Checking the flag between chunks only reacts once bytes arrive, so a gh that
+		// has stalled would ignore cancellation indefinitely. The watchdog kills the
+		// process instead, which closes the pipe and unblocks the read immediately.
+		Thread watchdog = startCancellationWatchdog(process, cancelled);
 		try {
 			try (InputStream in = process.getInputStream()) {
-				Files.copy(in, archive, StandardCopyOption.REPLACE_EXISTING);
+				spool(in, archive, cancelled);
 			}
 
 			int exit = process.waitFor();
 			stderrPump.join();
+
+			if (isCancelled(cancelled)) {
+				throw new GhCancelledException("Source fetch was cancelled");
+			}
 
 			if (exit != 0) {
 				throw new IOException(
@@ -175,9 +218,79 @@ public final class BranchSource {
 			SourceNode root = buildTree(archive);
 			return new Branch(root, archive);
 		} catch (IOException | InterruptedException | RuntimeException e) {
+			// Make sure the child is really gone and its pump has finished before the
+			// archive is removed; destroy() alone can leave a stalled gh running.
+			Gh.terminate(process);
+			joinQuietly(stderrPump);
 			deleteQuietly(archive);
 			throw e;
+		} finally {
+			stopWatchdog(watchdog);
 		}
+	}
+
+	/**
+	 * Poll the cancellation flag on a daemon thread and terminate {@code process}
+	 * the moment it is raised, so a blocking read on its output cannot outlive the
+	 * cancellation.
+	 */
+	private static Thread startCancellationWatchdog(Process process, AtomicBoolean cancelled) {
+		if (cancelled == null) {
+			return null;
+		}
+		Thread watchdog = new Thread(() -> {
+			try {
+				while (!process.waitFor(WATCHDOG_POLL_MILLIS, TimeUnit.MILLISECONDS)) {
+					if (cancelled.get()) {
+						Gh.terminate(process);
+						return;
+					}
+				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+		}, "gh-zipball-cancel");
+		watchdog.setDaemon(true);
+		watchdog.start();
+		return watchdog;
+	}
+
+	private static void stopWatchdog(Thread watchdog) {
+		if (watchdog == null) {
+			return;
+		}
+		watchdog.interrupt();
+		joinQuietly(watchdog);
+	}
+
+	private static void joinQuietly(Thread thread) {
+		try {
+			thread.join();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		}
+	}
+
+	/**
+	 * Copy the archive to disk in chunks, checking for cancellation between them so
+	 * a large download is abandoned as soon as the flag is raised. The watchdog
+	 * covers the case where no further chunk ever arrives.
+	 */
+	private static void spool(InputStream in, Path archive, AtomicBoolean cancelled) throws IOException {
+		byte[] buffer = new byte[64 * 1024];
+		try (var out = Files.newOutputStream(archive, StandardOpenOption.TRUNCATE_EXISTING)) {
+			int read;
+			while ((read = in.read(buffer)) != -1) {
+				if (isCancelled(cancelled)) {
+					throw new GhCancelledException("Source fetch was cancelled");
+				}
+				out.write(buffer, 0, read);
+			}
+		}
+	}
+
+	private static boolean isCancelled(AtomicBoolean cancelled) {
+		return cancelled != null && cancelled.get();
 	}
 
 	/** Scan the spooled archive once to build the metadata-only source tree. */

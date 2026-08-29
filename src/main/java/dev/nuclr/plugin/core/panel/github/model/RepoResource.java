@@ -38,7 +38,7 @@ public class RepoResource extends NuclrResource {
 
 		setName(repo.getDisplayName());
 
-		var uuid = "gh://repo/" + repo;
+		var uuid = "gh://repo/" + repo.getNameWithOwner();
 		this.setUuid(uuid);
 
 		this.getMetadata().put(GitHubRepos.Visibility, repo.getVisibility());

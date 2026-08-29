@@ -14,6 +14,7 @@ import dev.nuclr.platform.plugin.NuclrMenuResource;
 import dev.nuclr.platform.plugin.NuclrPluginCallback;
 import dev.nuclr.platform.plugin.NuclrPluginContext;
 import dev.nuclr.platform.plugin.NuclrResource;
+import dev.nuclr.plugin.core.panel.github.gh.BranchSource;
 import dev.nuclr.plugin.core.panel.github.gh.Gh;
 import dev.nuclr.plugin.core.panel.github.gh.GitHubBranches;
 import dev.nuclr.plugin.core.panel.github.gh.GitHubClone;
@@ -43,9 +44,26 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 	private boolean focused = false;
 	private NuclrPluginContext context;
 	
+	/**
+	 * UUIDs of the instances the host has actually started, which share
+	 * {@link BranchSource}'s static cache. Only instances that reach init() register
+	 * here: the template is probed via supports() and left at preinit forever, so
+	 * counting it would mean the set never empties and the cache never got dropped.
+	 * Keying by UUID also makes repeated init()/unload() calls idempotent.
+	 */
+	private static final java.util.Set<String> LIVE_INSTANCES =
+			java.util.concurrent.ConcurrentHashMap.newKeySet();
+
 	private boolean initialisedAndAuthenticated = false;
-	
-	private String uuid = java.util.UUID.randomUUID().toString();
+
+	/**
+	 * Set once the gh probes have run, whether they succeeded or not. supports() is
+	 * called on every navigation, so without this latch a failed check would
+	 * re-spawn the gh probes and re-raise the modal warning on each keystroke.
+	 */
+	private boolean ghProbed = false;
+
+	private final String uuid = java.util.UUID.randomUUID().toString();
 	
 	private NuclrResource selectedResource;
 	
@@ -83,7 +101,7 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 		
 		var menuItem = new MenuItem();
 		menuItem.setPath(ResourcesHelper.root());
-		menuItem.setText("Github");
+		menuItem.setText("GitHub");
 		menuItem.setUuid("gh_root");
 		
 		holder.setMenuItems(List.of(menuItem));
@@ -106,21 +124,33 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 
 	@Override
 	public void init() {
+		// Only the host calls init(), and only on a live instance, so this is the one
+		// place an instance may claim a share of the cache. supports() deliberately
+		// uses probeGh() instead: it also runs on the never-unloaded template.
+		LIVE_INSTANCES.add(uuid);
+		probeGh();
+	}
 
-		//  TODO: check if gh CLI is available, if not, show a warning and disable the plugin's functionality
+	/** Run the gh availability/auth checks once, warning the user at most once. */
+	private void probeGh() {
+
+		if (ghProbed) {
+			return;
+		}
+		ghProbed = true;
+
 		if (false == Gh.isGhInstalled()) {
 			showError("GitHub CLI not found", "The GitHub file panel plugin requires the GitHub CLI to be installed. Please install the GitHub CLI to use this plugin.");
 			log.info("GitHub CLI not found");
 			return;
 		}
-		
-		// TODO: check if the user is authenticated with gh CLI, if not, show a warning and disable the plugin's functionality
+
 		if (false == Gh.isGhAuthenticated()) {
 			showError("GitHub CLI not authenticated", "The GitHub file panel plugin requires the user to be authenticated with the GitHub CLI. Please authenticate with the GitHub CLI to use this plugin.");
 			log.info("GitHub CLI not authenticated");
 			return;
 		}
-		
+
 		initialisedAndAuthenticated = true;
 	}
 
@@ -131,14 +161,21 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 
 	@Override
 	public void unload() {
-		// TODO Auto-generated method stub
-		
+		// Drop the shared archive cache only once the last started panel has gone, so
+		// unloading one panel cannot force the other to re-download a branch it is
+		// still browsing.
+		if (LIVE_INSTANCES.remove(uuid) && LIVE_INSTANCES.isEmpty()) {
+			BranchSource.clear();
+		}
+		closeResource();
+		context = null;
+		initialisedAndAuthenticated = false;
+		ghProbed = false;
 	}
 
 	@Override
 	public void closeResource() {
-		// TODO Auto-generated method stub
-		
+		selectedResource = null;
 	}
 
 	@Override
@@ -159,9 +196,11 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 			return false;
 		}
 		
-		// Init if necessary
+		// Probe gh if necessary. probeGh() latches internally, so a missing or
+		// unauthenticated gh is reported once rather than on every navigation, and it
+		// does not register this (possibly template) instance as a cache holder.
 		if (false == initialisedAndAuthenticated && path.equals(ResourcesHelper.root().getPath())) {
-			init();
+			probeGh();
 			if (false == initialisedAndAuthenticated) {
 				return false;
 			}
@@ -204,7 +243,7 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 		// List repos
 		if (resourceToOpen.equals(ResourcesHelper.root())) {
 			this.selectedResource = resourceToOpen;
-			return GitHubRepos.repos();
+			return GitHubRepos.repos(cancelled);
 		}
 
 		var path = resourceToOpen.getPath();
@@ -216,17 +255,17 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 				// Repository -> its branches
 				case "github-repo":
 					this.selectedResource = resourceToOpen;
-					return GitHubBranches.branches(resourceToOpen);
+					return GitHubBranches.branches(resourceToOpen, cancelled);
 
 				// Branch -> fetch (once) + cache full source, list root directory
 				case BranchResource.Tag:
 					this.selectedResource = resourceToOpen;
-					return GitHubSourceListing.openBranch(resourceToOpen);
+					return GitHubSourceListing.openBranch(resourceToOpen, cancelled);
 
 				// Source directory -> list children from the cached tree
 				case SourceResource.DirTag:
 					this.selectedResource = resourceToOpen;
-					return GitHubSourceListing.openDirectory(resourceToOpen);
+					return GitHubSourceListing.openDirectory(resourceToOpen, cancelled);
 
 				default:
 					break;
