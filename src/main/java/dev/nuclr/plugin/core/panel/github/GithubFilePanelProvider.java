@@ -104,6 +104,7 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 		menuItem.setText("GitHub");
 		menuItem.setUuid("gh_root");
 		
+		holder.setTitle("GitHub Repositories");
 		holder.setMenuItems(List.of(menuItem));
 		
 		return holder;
