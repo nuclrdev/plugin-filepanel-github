@@ -9,7 +9,7 @@
 			"id": "dev.nuclr.plugin.core.panel.github",
 			"name": "GitHub Plugin",
 			"version": "${project.version}",
-			"description": "A plugin that provides a file panel for browsing GitHub resources using the GitHub CLI.",
+			"description": "Browse GitHub repositories, source trees, and Actions artifacts; copy, move, or delete artifact ZIPs from the file panel.",
 			"author": "Nuclr Development Team",
 			"license": "Apache-2.0",
 			"website": "https://nuclr.dev",
