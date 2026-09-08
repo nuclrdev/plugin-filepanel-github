@@ -16,10 +16,15 @@ import dev.nuclr.platform.plugin.NuclrPluginContext;
 import dev.nuclr.platform.plugin.NuclrResource;
 import dev.nuclr.plugin.core.panel.github.gh.BranchSource;
 import dev.nuclr.plugin.core.panel.github.gh.Gh;
+import dev.nuclr.plugin.core.panel.github.gh.GhCancelledException;
+import dev.nuclr.plugin.core.panel.github.gh.GitHubArtifactOperations;
+import dev.nuclr.plugin.core.panel.github.gh.GitHubArtifacts;
 import dev.nuclr.plugin.core.panel.github.gh.GitHubBranches;
 import dev.nuclr.plugin.core.panel.github.gh.GitHubClone;
 import dev.nuclr.plugin.core.panel.github.gh.GitHubRepos;
 import dev.nuclr.plugin.core.panel.github.gh.GitHubSourceListing;
+import dev.nuclr.plugin.core.panel.github.model.ActionsResource;
+import dev.nuclr.plugin.core.panel.github.model.ArtifactResource;
 import dev.nuclr.plugin.core.panel.github.model.BranchResource;
 import dev.nuclr.plugin.core.panel.github.model.SourceResource;
 import lombok.extern.slf4j.Slf4j;
@@ -40,6 +45,11 @@ import lombok.extern.slf4j.Slf4j;
 public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 	
 	private static final String CloneAction = "github.branch.clone";
+	private static final String CopyAction = "filepanel.copy";
+	private static final String MoveAction = "filepanel.move";
+	private static final String DeleteAction = "filepanel.delete";
+	private static final String HostDeleteAction = "delete";
+	private static final String HostPermanentDeleteAction = "delete.permanent";
 
 	private boolean focused = false;
 	private NuclrPluginContext context;
@@ -112,12 +122,18 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 
 	@Override
 	public List<NuclrMenuResource> menuItems(NuclrResource resource) {
+		if (ArtifactResource.isArtifact(resource) || hasTag(selectedResource, ActionsResource.Tag)) {
+			return List.of(
+					new NuclrMenuResource("Copy", "F5", CopyAction),
+					new NuclrMenuResource("Move", "F6", MoveAction),
+					new NuclrMenuResource("Delete", "F8", DeleteAction));
+		}
 		// While branches are displayed, selectedResource is the repository that was
 		// opened to produce the list. Register F5 for that stable panel context as
 		// well as for a branch under the cursor; act() still refuses to run unless
 		// it receives a real BranchResource.
 		return branchResource(resource) != null
-				|| hasTag(selectedResource, "github-repo")
+				|| resource == null && hasTag(selectedResource, "github-repo")
 				|| branchResource(selectedResource) != null
 				? List.of(new NuclrMenuResource("Clone", "F5", CloneAction))
 				: List.of();
@@ -222,6 +238,7 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 		switch (tag) {
 			case "github-repo":              // repository -> branches
 			case BranchResource.Tag:         // branch -> source root
+			case ActionsResource.Tag:        // Actions -> repository artifacts
 			case SourceResource.DirTag:      // source directory -> children
 				return true;
 			default:
@@ -263,6 +280,11 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 					this.selectedResource = resourceToOpen;
 					return GitHubSourceListing.openBranch(resourceToOpen, cancelled);
 
+				// Actions -> all build artifacts in the repository
+				case ActionsResource.Tag:
+					this.selectedResource = resourceToOpen;
+					return GitHubArtifacts.artifacts(resourceToOpen, cancelled);
+
 				// Source directory -> list children from the cached tree
 				case SourceResource.DirTag:
 					this.selectedResource = resourceToOpen;
@@ -292,6 +314,11 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 			return "GitHub: " + repo + " @ " + branch;
 		}
 
+		if (ActionsResource.Tag.equals(tag)) {
+			var repo = selectedResource.getMetadata(ActionsResource.Repo, "");
+			return "GitHub: " + repo + " / Actions";
+		}
+
 		if (SourceResource.DirTag.equals(tag)) {
 			var repo = selectedResource.getMetadata(SourceResource.Repo, "");
 			var branch = selectedResource.getMetadata(SourceResource.Branch, "");
@@ -304,8 +331,17 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 
 	@Override
 	public String getSelectionSummaryText(List<NuclrResource> selectedResources) {
-		// TODO Auto-generated method stub
-		return null;
+		if (selectedResources == null || selectedResources.isEmpty()) {
+			return getCurrentLocationDisplayText();
+		}
+		List<NuclrResource> artifacts = selectedResources.stream()
+				.filter(ArtifactResource::isArtifact).toList();
+		if (artifacts.isEmpty()) {
+			return selectedResources.size() == 1 ? selectedResources.getFirst().getName() : null;
+		}
+		long bytes = artifacts.stream().mapToLong(NuclrResource::getLength).sum();
+		return artifacts.size() + (artifacts.size() == 1 ? " artifact" : " artifacts")
+				+ "  |  " + humanSize(bytes);
 	}
 
 	@Override
@@ -317,7 +353,25 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 			Map<String, Object> data,
 			NuclrPluginCallback callback) {
 
-		if (!CloneAction.equals(actionType)) {
+		if (CopyAction.equals(actionType) || MoveAction.equals(actionType)) {
+			transferArtifacts(other, selectedResources, focusedResource, callback,
+					MoveAction.equals(actionType));
+			return;
+		}
+		if (DeleteAction.equals(actionType)
+				|| HostDeleteAction.equals(actionType)
+				|| HostPermanentDeleteAction.equals(actionType)) {
+			deleteArtifacts(selectedResources, focusedResource, callback);
+			return;
+		}
+		if (CloneAction.equals(actionType)) {
+			cloneBranch(other, selectedResources, focusedResource, callback);
+		}
+	}
+
+	private void cloneBranch(BaseNuclrPlugin other, List<NuclrResource> selectedResources,
+			NuclrResource focusedResource, NuclrPluginCallback callback) {
+		if (other == null) {
 			return;
 		}
 
@@ -355,6 +409,103 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 					}
 				},
 				error -> showError("Clone failed", error.getMessage()));
+	}
+
+	private void transferArtifacts(BaseNuclrPlugin other, List<NuclrResource> selectedResources,
+			NuclrResource focusedResource, NuclrPluginCallback callback, boolean move) {
+		List<NuclrResource> artifacts = GitHubArtifactOperations.selectedArtifacts(
+				selectedResources, focusedResource);
+		if (artifacts.isEmpty()) {
+			return;
+		}
+		Path destination = GitHubClone.destinationDirectory(other);
+		if (destination == null) {
+			showError(move ? "Move artifacts" : "Copy artifacts",
+					"Open a writable local folder in the other file panel.");
+			return;
+		}
+		if (move && !confirmArtifactRemoval("Move artifacts", artifacts,
+				"After each artifact is downloaded, it will be deleted from GitHub.")) {
+			return;
+		}
+
+		String destinationUuid = other.uuid();
+		Thread worker = new Thread(() -> {
+			try {
+				int completed = GitHubArtifactOperations.transfer(artifacts, destination, move, callback);
+				if (completed > 0) {
+					emitRefresh(destinationUuid);
+					if (move) {
+						emitRefresh(uuid);
+					}
+				}
+			} catch (GhCancelledException e) {
+				log.debug("GitHub artifact {} cancelled", move ? "move" : "copy");
+			} catch (Exception e) {
+				String operation = move ? "Move artifacts" : "Copy artifacts";
+				log.error("{} failed: {}", operation, e.getMessage(), e);
+				if (callback != null) {
+					callback.onError(operation, e);
+				}
+				showError(operation + " failed", e.getMessage());
+			}
+		}, move ? "github-artifact-move" : "github-artifact-copy");
+		worker.setDaemon(true);
+		worker.start();
+	}
+
+	private void deleteArtifacts(List<NuclrResource> selectedResources,
+			NuclrResource focusedResource, NuclrPluginCallback callback) {
+		List<NuclrResource> artifacts = GitHubArtifactOperations.selectedArtifacts(
+				selectedResources, focusedResource);
+		if (artifacts.isEmpty()
+				|| !confirmArtifactRemoval("Delete artifacts", artifacts,
+						"This permanently deletes the selected artifacts from GitHub.")) {
+			return;
+		}
+
+		Thread worker = new Thread(() -> {
+			try {
+				if (GitHubArtifactOperations.delete(artifacts, callback) > 0) {
+					emitRefresh(uuid);
+				}
+			} catch (GhCancelledException e) {
+				log.debug("GitHub artifact deletion cancelled");
+			} catch (Exception e) {
+				log.error("Artifact deletion failed: {}", e.getMessage(), e);
+				if (callback != null) {
+					callback.onError("Delete artifacts", e);
+				}
+				showError("Delete artifacts failed", e.getMessage());
+			}
+		}, "github-artifact-delete");
+		worker.setDaemon(true);
+		worker.start();
+	}
+
+	private boolean confirmArtifactRemoval(String title, List<NuclrResource> artifacts, String warning) {
+		StringBuilder message = new StringBuilder();
+		message.append(artifacts.size() == 1 ? artifacts.getFirst().getName()
+				: artifacts.size() + " selected artifacts");
+		message.append(System.lineSeparator()).append(System.lineSeparator()).append(warning);
+		return JOptionPane.showConfirmDialog(null, message, title,
+				JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.OK_OPTION;
+	}
+
+	private void emitRefresh(String pluginUuid) {
+		if (context != null && context.getEventBus() != null && pluginUuid != null) {
+			context.getEventBus().emit(
+					"refresh.plugin.file.panel", Map.of("plugin.uuid", pluginUuid), null);
+		}
+	}
+
+	private static String humanSize(long bytes) {
+		if (bytes < 1024) {
+			return bytes + " B";
+		}
+		String units = "KMGTPE";
+		int exp = Math.min((int) (Math.log(bytes) / Math.log(1024)), units.length());
+		return String.format("%.1f %sB", bytes / Math.pow(1024, exp), units.charAt(exp - 1));
 	}
 
 	private static NuclrResource branchResource(NuclrResource resource) {

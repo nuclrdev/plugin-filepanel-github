@@ -6,7 +6,7 @@
 
 	<groupId>dev.nuclr.plugin.core</groupId>
 	<artifactId>filepanel-github</artifactId>
-	<version>1.0.4</version>
+	<version>1.1.0</version>
 
 	<name>Nuclr File Panel - GitHub (Repositories)</name>
 

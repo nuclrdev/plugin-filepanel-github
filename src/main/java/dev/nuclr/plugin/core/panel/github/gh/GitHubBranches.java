@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import dev.nuclr.platform.plugin.FilePanelNuclrPlugin.NuclrResourceData;
 import dev.nuclr.platform.plugin.NuclrResource;
 import dev.nuclr.plugin.core.panel.github.ResourcesHelper;
+import dev.nuclr.plugin.core.panel.github.model.ActionsResource;
 import dev.nuclr.plugin.core.panel.github.model.BranchResource;
 import lombok.extern.slf4j.Slf4j;
 
@@ -59,6 +60,10 @@ public final class GitHubBranches {
 			log.warn("Cannot list branches: the resource carries no repository name");
 			return data;
 		}
+
+		var actions = new ActionsResource(repo);
+		actions.getMetadata().put(BranchName, "Actions");
+		data.getEntries().add(actions);
 
 		try {
 			for (var branch : listBranches(repo, cancelled)) {
