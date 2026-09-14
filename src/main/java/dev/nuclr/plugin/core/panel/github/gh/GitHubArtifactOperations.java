@@ -88,11 +88,28 @@ public final class GitHubArtifactOperations {
 		return completed;
 	}
 
-	public static int delete(List<NuclrResource> artifacts, NuclrPluginCallback callback)
-			throws IOException, InterruptedException {
+	/** Removes one remote artifact; swapped out in tests so no gh process is spawned. */
+	@FunctionalInterface
+	interface ArtifactDeleter {
+		void delete(String repo, long artifactId, AtomicBoolean cancelled) throws IOException, InterruptedException;
+	}
+
+	/**
+	 * Delete artifacts one request at a time, reporting each through {@code callback}.
+	 * Raising {@code cancelled} stops before the next artifact and also kills the request
+	 * in flight, which then surfaces as a {@link GhCancelledException}.
+	 */
+	public static int delete(List<NuclrResource> artifacts, NuclrPluginCallback callback,
+			AtomicBoolean cancelled) throws IOException, InterruptedException {
+		return delete(artifacts, callback, cancelled, GitHubArtifacts::delete);
+	}
+
+	static int delete(List<NuclrResource> artifacts, NuclrPluginCallback callback,
+			AtomicBoolean cancelled, ArtifactDeleter deleter) throws IOException, InterruptedException {
+		int total = artifacts.size();
 		int deleted = 0;
-		for (int index = 0; index < artifacts.size(); index++) {
-			if (cancelled(callback)) {
+		for (int index = 0; index < total; index++) {
+			if (cancelled.get() || cancelled(callback)) {
 				break;
 			}
 			NuclrResource artifact = artifacts.get(index);
@@ -102,16 +119,15 @@ public final class GitHubArtifactOperations {
 				continue;
 			}
 			if (callback != null) {
-				callback.onStart("Deleting " + artifact.getName()
-						+ " (" + (index + 1) + "/" + artifacts.size() + ")");
-				callback.onProgress(index, artifacts.size());
+				callback.onStart("Deleting " + artifact.getName() + " (" + (index + 1) + "/" + total + ")");
+				callback.onProgress(index, total);
 			}
-			GitHubArtifacts.delete(repo, id, new AtomicBoolean(false));
+			deleter.delete(repo, id, cancelled);
 			deleted++;
-		}
-		if (callback != null && !cancelled(callback)) {
-			callback.onProgress(deleted, artifacts.size());
-			callback.onComplete();
+			if (callback != null) {
+				callback.onProgress(index + 1, total);
+				callback.onComplete();
+			}
 		}
 		return deleted;
 	}

@@ -464,19 +464,26 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 			return;
 		}
 
+		// The host passes no callback for Delete, so the plugin shows its own progress.
+		ArtifactProgressDialog progress = ArtifactProgressDialog.show(
+				"Delete artifacts", "deleted", artifacts.size(), callback);
 		Thread worker = new Thread(() -> {
+			Exception failure = null;
 			try {
-				if (GitHubArtifactOperations.delete(artifacts, callback) > 0) {
-					emitRefresh(uuid);
-				}
+				GitHubArtifactOperations.delete(artifacts, progress, progress.cancelledFlag());
 			} catch (GhCancelledException e) {
 				log.debug("GitHub artifact deletion cancelled");
 			} catch (Exception e) {
-				log.error("Artifact deletion failed: {}", e.getMessage(), e);
-				if (callback != null) {
-					callback.onError("Delete artifacts", e);
-				}
-				showError("Delete artifacts failed", e.getMessage());
+				failure = e;
+			} finally {
+				progress.close();
+				// Refresh even after a cancel or failure: the artifacts deleted before it are gone.
+				emitRefresh(uuid);
+			}
+			if (failure != null) {
+				log.error("Artifact deletion failed: {}", failure.getMessage(), failure);
+				progress.onError("Delete artifacts", failure);
+				showError("Delete artifacts failed", failure.getMessage());
 			}
 		}, "github-artifact-delete");
 		worker.setDaemon(true);
