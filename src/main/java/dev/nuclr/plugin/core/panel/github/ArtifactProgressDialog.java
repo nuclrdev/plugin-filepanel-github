@@ -17,20 +17,25 @@
 */
 package dev.nuclr.plugin.core.panel.github;
 
+import static dev.nuclr.plugin.core.panel.github.Messages.tr;
+
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.KeyboardFocusManager;
+import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
+import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
+import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 
 import dev.nuclr.platform.plugin.NuclrPluginCallback;
@@ -49,16 +54,16 @@ final class ArtifactProgressDialog implements NuclrPluginCallback {
 
 	private final AtomicBoolean cancelled = new AtomicBoolean(false);
 	private final NuclrPluginCallback host;
-	private final String doneVerb;
+	private final String countKey;
 	private final JDialog dialog;
-	private final JLabel itemLabel = new JLabel("Preparing…");
+	private final JLabel itemLabel = new JLabel(tr("progress.preparing"));
 	private final JLabel countLabel = new JLabel(" ");
 	private final JProgressBar bar = new JProgressBar();
-	private final JButton cancelButton = new JButton("Cancel");
+	private final JButton cancelButton = new JButton(tr("common.cancel"));
 
-	private ArtifactProgressDialog(String title, String doneVerb, int total, NuclrPluginCallback host) {
+	private ArtifactProgressDialog(String title, String countKey, int total, NuclrPluginCallback host) {
 		this.host = host;
-		this.doneVerb = doneVerb;
+		this.countKey = countKey;
 
 		dialog = new JDialog(KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow(), title);
 		dialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
@@ -72,8 +77,11 @@ final class ArtifactProgressDialog implements NuclrPluginCallback {
 		bar.setMinimum(0);
 		bar.setMaximum(Math.max(total, 1));
 		bar.setStringPainted(true);
-		countLabel.setText("0 of " + total + " " + doneVerb);
+		countLabel.setText(tr(countKey, "0", String.valueOf(total)));
 		cancelButton.addActionListener(e -> cancel());
+		// ESC answers like Cancel, as in every other dialog.
+		dialog.getRootPane().registerKeyboardAction(e -> cancel(),
+				KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
 
 		JPanel content = new JPanel(new BorderLayout(0, 8));
 		content.setBorder(BorderFactory.createEmptyBorder(14, 18, 12, 18));
@@ -95,8 +103,8 @@ final class ArtifactProgressDialog implements NuclrPluginCallback {
 	}
 
 	/** Build and show the window. Must be called on the EDT. */
-	static ArtifactProgressDialog show(String title, String doneVerb, int total, NuclrPluginCallback host) {
-		ArtifactProgressDialog progress = new ArtifactProgressDialog(title, doneVerb, total, host);
+	static ArtifactProgressDialog show(String title, String countKey, int total, NuclrPluginCallback host) {
+		ArtifactProgressDialog progress = new ArtifactProgressDialog(title, countKey, total, host);
 		progress.dialog.setVisible(true);
 		return progress;
 	}
@@ -113,7 +121,7 @@ final class ArtifactProgressDialog implements NuclrPluginCallback {
 	private void cancel() {
 		cancelled.set(true);
 		cancelButton.setEnabled(false);
-		itemLabel.setText("Cancelling…");
+		itemLabel.setText(tr("progress.cancelling"));
 	}
 
 	@Override
@@ -134,7 +142,7 @@ final class ArtifactProgressDialog implements NuclrPluginCallback {
 			if (total > 0) {
 				bar.setMaximum((int) total);
 				bar.setValue((int) Math.min(current, total));
-				countLabel.setText(current + " of " + total + " " + doneVerb);
+				countLabel.setText(tr(countKey, String.valueOf(current), String.valueOf(total)));
 			}
 		});
 		if (host != null) {

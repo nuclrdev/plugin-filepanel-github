@@ -17,6 +17,8 @@
 */
 package dev.nuclr.plugin.core.panel.github.model;
 
+import static dev.nuclr.plugin.core.panel.github.Messages.tr;
+
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -70,7 +72,7 @@ public final class ArtifactResource extends NuclrResource {
 		getMetadata().put(SizeColumn, humanSize(artifact.getSizeInBytes()));
 		getMetadata().put(CreatedColumn, artifact.getCreatedAt());
 		getMetadata().put(ExpiresColumn, artifact.getExpiresAt());
-		getMetadata().put(StatusColumn, artifact.isExpired() ? "Expired" : "Available");
+		getMetadata().put(StatusColumn, tr(artifact.isExpired() ? "artifact.status.expired" : "artifact.status.available"));
 	}
 
 	public static boolean isArtifact(NuclrResource resource) {
@@ -80,7 +82,7 @@ public final class ArtifactResource extends NuclrResource {
 	@Override
 	public InputStream openInputStream(OpenOption... options) throws Exception {
 		if (getMetadata(Expired, false)) {
-			throw new IOException("Artifact has expired: " + getMetadata(ArtifactName, getName()));
+			throw new IOException(tr("artifact.expired", getMetadata(ArtifactName, getName())));
 		}
 		String repo = getMetadata(Repo, "");
 		long id = getMetadata(ArtifactId, 0L);

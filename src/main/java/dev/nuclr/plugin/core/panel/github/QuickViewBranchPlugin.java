@@ -17,6 +17,8 @@
 */
 package dev.nuclr.plugin.core.panel.github;
 
+import static dev.nuclr.plugin.core.panel.github.Messages.tr;
+
 import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -150,7 +152,7 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 		glyph.setFont(glyph.getFont().deriveFont(Font.BOLD, 28f));
 		glyph.setForeground(accent);
 
-		loadingTitle = centredLabel("Loading…", fg);
+		loadingTitle = centredLabel(tr("qv.loading"), fg);
 		loadingTitle.setFont(loadingTitle.getFont().deriveFont(Font.BOLD, 18f));
 
 		loadingSubtitle = centredLabel(" ", dim);
@@ -162,7 +164,7 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 		progressBar.setMaximumSize(new Dimension(260, 6));
 		progressBar.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-		loadingStatus = centredLabel("Contacting GitHub…", dim);
+		loadingStatus = centredLabel(tr("qv.contacting"), dim);
 		loadingStatus.setFont(loadingStatus.getFont().deriveFont(11f));
 
 		inner.add(glyph);
@@ -270,6 +272,9 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 
 	@Override
 	public void preinit(NuclrPluginContext context) {
+		if (context != null) {
+			Messages.use(context.getLocale());
+		}
 		this.context = context;
 		this.theme = context != null ? context.getTheme() : null;
 	}
@@ -300,7 +305,7 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 				loadingSubtitle.setText(repo);
 			}
 			if (loadingStatus != null) {
-				loadingStatus.setText("Contacting GitHub…");
+				loadingStatus.setText(tr("qv.contacting"));
 			}
 			if (progressBar != null) {
 				progressBar.setIndeterminate(true);
@@ -342,13 +347,13 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 	private String buildHtml(String repo, String branch, AtomicBoolean cancelled, Consumer<String> progress)
 			throws IOException {
 
-		progress.accept("Fetching branch details…");
+		progress.accept(tr("branch.progress.details"));
 		JsonNode branchNode = ghJson("repos/" + repo + "/branches/" + branch, cancelled);
 		if (branchNode == null || branchNode.path("name").isMissingNode()) {
-			throw new IOException("Could not read branch '" + branch + "' in " + repo + " via gh.");
+			throw new IOException(tr("branch.error.read", branch, repo));
 		}
 
-		progress.accept("Reading repository…");
+		progress.accept(tr("branch.progress.repository"));
 		JsonNode repoNode = ghJson("repos/" + repo, cancelled);
 		String defaultBranch = text(repoNode, "default_branch");
 
@@ -362,40 +367,40 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 		sb.append("<div class='sub'>").append(esc(repo)).append("</div>");
 
 		// --- Overview --------------------------------------------------------
-		sb.append(section("Overview"));
+		sb.append(section(tr("qv.section.overview")));
 		sb.append("<table>");
-		row(sb, "Repository", repo);
-		row(sb, "Branch", branch);
+		row(sb, tr("branch.row.repository"), repo);
+		row(sb, tr("branch.row.branch"), branch);
 		if (!defaultBranch.isBlank()) {
 			boolean isDefault = defaultBranch.equals(branch);
-			row(sb, "Default branch", defaultBranch + (isDefault ? "  ← this is the default" : ""));
+			row(sb, tr("qv.row.default.branch"), defaultBranch + (isDefault ? "  " + tr("branch.is.default") : ""));
 		}
-		row(sb, "Protected", yesNo(branchNode.path("protected").asBoolean(false)));
+		row(sb, tr("branch.row.protected"), yesNo(branchNode.path("protected").asBoolean(false)));
 		if (!sha.isBlank()) {
-			row(sb, "Head commit", shortSha(sha) + "  (" + sha + ")");
+			row(sb, tr("branch.row.head.commit"), shortSha(sha) + "  (" + sha + ")");
 		}
 		String headLogin = text(commitWrapper.path("author"), "login");
 		if (!headLogin.isBlank()) {
-			row(sb, "Head author (GitHub)", "@" + headLogin);
+			row(sb, tr("branch.row.head.author"), "@" + headLogin);
 		}
 		sb.append("</table>");
 
 		// --- Latest commit ---------------------------------------------------
 		if (!commit.isMissingNode()) {
-			progress.accept("Analysing latest commit…");
-			sb.append(section("Latest commit"));
+			progress.accept(tr("branch.progress.commit"));
+			sb.append(section(tr("branch.section.commit")));
 			sb.append("<table>");
 			JsonNode author = commit.path("author");
 			JsonNode committer = commit.path("committer");
-			row(sb, "Message", firstLine(text(commit, "message")));
-			rowOptional(sb, "Author", joinNameEmail(text(author, "name"), text(author, "email")));
-			rowOptional(sb, "Authored", fmtDate(text(author, "date")));
-			rowOptional(sb, "Committer", joinNameEmail(text(committer, "name"), text(committer, "email")));
-			rowOptional(sb, "Committed", fmtDate(text(committer, "date")));
-			rowOptional(sb, "Signature", text(commit.path("verification"), "reason"));
+			row(sb, tr("branch.row.message"), firstLine(text(commit, "message")));
+			rowOptional(sb, tr("qv.row.author"), joinNameEmail(text(author, "name"), text(author, "email")));
+			rowOptional(sb, tr("branch.row.authored"), fmtDate(text(author, "date")));
+			rowOptional(sb, tr("branch.row.committer"), joinNameEmail(text(committer, "name"), text(committer, "email")));
+			rowOptional(sb, tr("branch.row.committed"), fmtDate(text(committer, "date")));
+			rowOptional(sb, tr("branch.row.signature"), text(commit.path("verification"), "reason"));
 			String url = text(commitWrapper, "html_url");
 			if (!url.isBlank()) {
-				rowRaw(sb, "URL", link(url));
+				rowRaw(sb, tr("qv.row.url"), link(url));
 			}
 			sb.append("</table>");
 
@@ -407,32 +412,32 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 
 		// --- Head commit diff stats -----------------------------------------
 		if (!sha.isBlank() && !isCancelled(cancelled)) {
-			progress.accept("Computing diff stats…");
+			progress.accept(tr("branch.progress.diff"));
 			JsonNode commitDetail = ghJson("repos/" + repo + "/commits/" + sha, cancelled);
 			if (commitDetail != null) {
 				JsonNode stats = commitDetail.path("stats");
-				sb.append(section("Head commit changes"));
+				sb.append(section(tr("branch.section.changes")));
 				sb.append("<table>");
-				row(sb, "Additions", "+" + stats.path("additions").asInt(0));
-				row(sb, "Deletions", "−" + stats.path("deletions").asInt(0));
-				row(sb, "Total lines", String.valueOf(stats.path("total").asInt(0)));
+				row(sb, tr("branch.row.additions"), "+" + stats.path("additions").asInt(0));
+				row(sb, tr("branch.row.deletions"), "−" + stats.path("deletions").asInt(0));
+				row(sb, tr("branch.row.total.lines"), String.valueOf(stats.path("total").asInt(0)));
 				JsonNode files = commitDetail.path("files");
-				row(sb, "Files changed", String.valueOf(files.isArray() ? files.size() : 0));
+				row(sb, tr("branch.row.files.changed"), String.valueOf(files.isArray() ? files.size() : 0));
 				sb.append("</table>");
 			}
 		}
 
 		// --- Comparison to the default branch -------------------------------
 		if (!defaultBranch.isBlank() && !defaultBranch.equals(branch) && !isCancelled(cancelled)) {
-			progress.accept("Comparing with " + defaultBranch + "…");
+			progress.accept(tr("branch.progress.compare", defaultBranch));
 			JsonNode cmp = ghJson("repos/" + repo + "/compare/" + defaultBranch + "..." + branch, cancelled);
 			if (cmp != null && !cmp.path("status").isMissingNode()) {
-				sb.append(section("Compared with " + esc(defaultBranch)));
+				sb.append(section(tr("branch.section.compared", esc(defaultBranch))));
 				sb.append("<table>");
-				row(sb, "Status", text(cmp, "status"));
-				row(sb, "Ahead by", cmp.path("ahead_by").asInt(0) + " commit(s)");
-				row(sb, "Behind by", cmp.path("behind_by").asInt(0) + " commit(s)");
-				row(sb, "Commits in range", String.valueOf(cmp.path("total_commits").asInt(0)));
+				row(sb, tr("qv.row.status"), text(cmp, "status"));
+				row(sb, tr("branch.row.ahead"), tr("branch.commits", String.valueOf(cmp.path("ahead_by").asInt(0))));
+				row(sb, tr("branch.row.behind"), tr("branch.commits", String.valueOf(cmp.path("behind_by").asInt(0))));
+				row(sb, tr("branch.row.commits.range"), String.valueOf(cmp.path("total_commits").asInt(0)));
 				sb.append("</table>");
 			}
 		}
@@ -440,17 +445,17 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 		// --- Branch protection ----------------------------------------------
 		JsonNode protection = branchNode.path("protection");
 		if (branchNode.path("protected").asBoolean(false) && protection.isObject()) {
-			sb.append(section("Protection"));
+			sb.append(section(tr("branch.section.protection")));
 			sb.append("<table>");
-			row(sb, "Enabled", yesNo(protection.path("enabled").asBoolean(false)));
+			row(sb, tr("branch.row.enabled"), yesNo(protection.path("enabled").asBoolean(false)));
 			JsonNode checks = protection.path("required_status_checks");
 			if (checks.isObject()) {
-				rowOptional(sb, "Enforcement", text(checks, "enforcement_level"));
+				rowOptional(sb, tr("branch.row.enforcement"), text(checks, "enforcement_level"));
 				JsonNode contexts = checks.path("contexts");
 				if (contexts.isArray() && contexts.size() > 0) {
 					List<String> names = new ArrayList<>();
 					contexts.forEach(c -> names.add(c.asText()));
-					row(sb, "Required checks", String.join(", ", names));
+					row(sb, tr("branch.row.required.checks"), String.join(", ", names));
 				}
 			}
 			sb.append("</table>");
@@ -458,12 +463,12 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 
 		// --- Pull requests for this branch ----------------------------------
 		if (!isCancelled(cancelled)) {
-			progress.accept("Loading pull requests…");
+			progress.accept(tr("branch.progress.prs"));
 			String owner = repo.contains("/") ? repo.substring(0, repo.indexOf('/')) : "";
 			JsonNode prs = ghJson(
 					"repos/" + repo + "/pulls?state=all&per_page=20&head=" + owner + ":" + branch, cancelled);
 			if (prs != null && prs.isArray() && prs.size() > 0) {
-				sb.append(section("Pull requests (" + prs.size() + ")"));
+				sb.append(section(tr("branch.section.prs", String.valueOf(prs.size()))));
 				sb.append("<table>");
 				for (JsonNode pr : prs) {
 					String label = esc(text(pr, "title"))
@@ -554,9 +559,9 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 		return htmlHead()
 				+ "<h1>" + esc(branch) + "</h1>"
 				+ "<div class='sub'>" + esc(repo) + "</div>"
-				+ "<h2>Unable to load branch information</h2>"
-				+ "<p>" + esc(message == null ? "Unknown error." : message) + "</p>"
-				+ "<p class='dim'>Ensure the GitHub CLI (gh) is installed and authenticated.</p>"
+				+ "<h2>" + tr("branch.error.heading") + "</h2>"
+				+ "<p>" + esc(message == null ? tr("qv.unknown.error") : message) + "</p>"
+				+ "<p class='dim'>" + tr("qv.ensure.gh") + "</p>"
 				+ htmlFoot();
 	}
 
@@ -605,7 +610,7 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 	}
 
 	private static String yesNo(boolean b) {
-		return b ? "Yes" : "No";
+		return b ? tr("common.yes") : tr("common.no");
 	}
 
 	private static String fmtDate(String iso) {
@@ -689,7 +694,7 @@ public final class QuickViewBranchPlugin implements QuickViewNuclrPlugin {
 
 	@Override
 	public String getWindowTitle() {
-		return "GitHub Branch: " + (currentResource != null ? currentResource.getName() : "");
+		return tr("branch.window.title", currentResource != null ? currentResource.getName() : "");
 	}
 
 	// ------------------------------------------------------------- metadata ---

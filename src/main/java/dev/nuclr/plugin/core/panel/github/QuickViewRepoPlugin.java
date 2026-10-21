@@ -17,6 +17,8 @@
 */
 package dev.nuclr.plugin.core.panel.github;
 
+import static dev.nuclr.plugin.core.panel.github.Messages.tr;
+
 import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -152,7 +154,7 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 		JLabel glyph = centredLabel("◈", accent);
 		glyph.setFont(glyph.getFont().deriveFont(Font.BOLD, 28f));
 
-		loadingTitle = centredLabel("Loading…", fg);
+		loadingTitle = centredLabel(tr("qv.loading"), fg);
 		loadingTitle.setFont(loadingTitle.getFont().deriveFont(Font.BOLD, 18f));
 
 		loadingSubtitle = centredLabel(" ", dim);
@@ -164,7 +166,7 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 		progressBar.setMaximumSize(new Dimension(260, 6));
 		progressBar.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-		loadingStatus = centredLabel("Contacting GitHub…", dim);
+		loadingStatus = centredLabel(tr("qv.contacting"), dim);
 		loadingStatus.setFont(loadingStatus.getFont().deriveFont(11f));
 
 		inner.add(glyph);
@@ -275,6 +277,9 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 
 	@Override
 	public void preinit(NuclrPluginContext context) {
+		if (context != null) {
+			Messages.use(context.getLocale());
+		}
 		this.context = context;
 		this.theme = context != null ? context.getTheme() : null;
 	}
@@ -307,7 +312,7 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 				loadingSubtitle.setText(owner.isBlank() ? repo : owner);
 			}
 			if (loadingStatus != null) {
-				loadingStatus.setText("Contacting GitHub…");
+				loadingStatus.setText(tr("qv.contacting"));
 			}
 			if (progressBar != null) {
 				progressBar.setIndeterminate(true);
@@ -348,10 +353,10 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 
 	private String buildHtml(String repo, AtomicBoolean cancelled, Consumer<String> progress) throws IOException {
 
-		progress.accept("Fetching repository details…");
+		progress.accept(tr("repo.progress.details"));
 		JsonNode r = ghJson("repos/" + repo, cancelled);
 		if (r == null || r.path("full_name").isMissingNode()) {
-			throw new IOException("Could not read repository '" + repo + "' via gh.");
+			throw new IOException(tr("repo.error.read", repo));
 		}
 
 		String fullName = text(r, "full_name");
@@ -362,50 +367,50 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 		sb.append("<div class='sub'>").append(description.isBlank() ? "&nbsp;" : esc(description)).append("</div>");
 
 		// --- Overview --------------------------------------------------------
-		sb.append(section("Overview"));
+		sb.append(section(tr("qv.section.overview")));
 		sb.append("<table>");
-		rowOptional(sb, "Owner", text(r.path("owner"), "login")
+		rowOptional(sb, tr("repo.row.owner"), text(r.path("owner"), "login")
 				+ (text(r.path("owner"), "type").isBlank() ? "" : " (" + text(r.path("owner"), "type") + ")"));
-		rowOptional(sb, "Visibility", capitalize(visibility(r)));
-		rowOptional(sb, "Default branch", text(r, "default_branch"));
-		rowOptional(sb, "Primary language", text(r, "language"));
-		rowOptional(sb, "License", text(r.path("license"), "name"));
+		rowOptional(sb, tr("repo.row.visibility"), capitalize(visibility(r)));
+		rowOptional(sb, tr("qv.row.default.branch"), text(r, "default_branch"));
+		rowOptional(sb, tr("repo.row.language"), text(r, "language"));
+		rowOptional(sb, tr("repo.row.license"), text(r.path("license"), "name"));
 		String status = repoStatus(r);
-		rowOptional(sb, "Status", status);
+		rowOptional(sb, tr("qv.row.status"), status);
 		String homepage = text(r, "homepage");
 		if (!homepage.isBlank()) {
-			rowRaw(sb, "Homepage", link(homepage));
+			rowRaw(sb, tr("repo.row.homepage"), link(homepage));
 		}
-		rowOptional(sb, "Size", humanKb(r.path("size").asLong(0)));
-		rowOptional(sb, "Created", fmtDate(text(r, "created_at")));
-		rowOptional(sb, "Updated", fmtDate(text(r, "updated_at")));
-		rowOptional(sb, "Last push", fmtDate(text(r, "pushed_at")));
+		rowOptional(sb, tr("repo.row.size"), humanKb(r.path("size").asLong(0)));
+		rowOptional(sb, tr("repo.row.created"), fmtDate(text(r, "created_at")));
+		rowOptional(sb, tr("repo.row.updated"), fmtDate(text(r, "updated_at")));
+		rowOptional(sb, tr("repo.row.last.push"), fmtDate(text(r, "pushed_at")));
 		String url = text(r, "html_url");
 		if (!url.isBlank()) {
-			rowRaw(sb, "URL", link(url));
+			rowRaw(sb, tr("qv.row.url"), link(url));
 		}
 		sb.append("</table>");
 
 		// --- Fork parent -----------------------------------------------------
 		if (r.path("fork").asBoolean(false) && r.path("parent").isObject()) {
 			JsonNode parent = r.path("parent");
-			sb.append(section("Forked from"));
+			sb.append(section(tr("repo.section.forked")));
 			sb.append("<table>");
 			String parentUrl = text(parent, "html_url");
 			String parentName = text(parent, "full_name");
-			rowRaw(sb, "Parent", parentUrl.isBlank() ? esc(parentName)
+			rowRaw(sb, tr("repo.row.parent"), parentUrl.isBlank() ? esc(parentName)
 					: "<a href='" + esc(parentUrl) + "'>" + esc(parentName) + "</a>");
-			rowOptional(sb, "Default branch", text(parent, "default_branch"));
+			rowOptional(sb, tr("qv.row.default.branch"), text(parent, "default_branch"));
 			sb.append("</table>");
 		}
 
 		// --- Stats -----------------------------------------------------------
-		sb.append(section("Statistics"));
+		sb.append(section(tr("repo.section.statistics")));
 		sb.append("<table>");
-		row(sb, "Stars", count(r, "stargazers_count"));
-		row(sb, "Watchers", count(r, "subscribers_count"));
-		row(sb, "Forks", count(r, "forks_count"));
-		row(sb, "Open issues & PRs", count(r, "open_issues_count"));
+		row(sb, tr("repo.row.stars"), count(r, "stargazers_count"));
+		row(sb, tr("repo.row.watchers"), count(r, "subscribers_count"));
+		row(sb, tr("repo.row.forks"), count(r, "forks_count"));
+		row(sb, tr("repo.row.open.issues"), count(r, "open_issues_count"));
 		sb.append("</table>");
 
 		// --- Topics ----------------------------------------------------------
@@ -413,16 +418,16 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 		if (topics.isArray() && topics.size() > 0) {
 			List<String> names = new ArrayList<>();
 			topics.forEach(t -> names.add(t.asText()));
-			sb.append(section("Topics"));
+			sb.append(section(tr("repo.section.topics")));
 			sb.append("<p>").append(esc(String.join(", ", names))).append("</p>");
 		}
 
 		// --- Languages -------------------------------------------------------
 		if (!isCancelled(cancelled)) {
-			progress.accept("Reading language breakdown…");
+			progress.accept(tr("repo.progress.languages"));
 			JsonNode langs = ghJson("repos/" + repo + "/languages", cancelled);
 			if (langs != null && langs.isObject() && langs.size() > 0) {
-				sb.append(section("Languages"));
+				sb.append(section(tr("repo.section.languages")));
 				sb.append("<table>");
 				appendLanguages(sb, langs);
 				sb.append("</table>");
@@ -437,25 +442,25 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 		if (r.path("has_pages").asBoolean(false)) features.add("Pages");
 		if (r.path("has_discussions").asBoolean(false)) features.add("Discussions");
 		if (!features.isEmpty()) {
-			sb.append(section("Features"));
+			sb.append(section(tr("repo.section.features")));
 			sb.append("<p>").append(esc(String.join(", ", features))).append("</p>");
 		}
 
 		// --- Latest release --------------------------------------------------
 		if (!isCancelled(cancelled)) {
-			progress.accept("Checking latest release…");
+			progress.accept(tr("repo.progress.release"));
 			JsonNode release = ghJson("repos/" + repo + "/releases/latest", cancelled);
 			if (release != null && !text(release, "tag_name").isBlank()) {
-				sb.append(section("Latest release"));
+				sb.append(section(tr("repo.section.release")));
 				sb.append("<table>");
 				String name = text(release, "name");
-				row(sb, "Tag", text(release, "tag_name"));
-				rowOptional(sb, "Name", name);
-				rowOptional(sb, "Published", fmtDate(text(release, "published_at")));
-				rowOptional(sb, "Author", text(release.path("author"), "login"));
+				row(sb, tr("repo.row.tag"), text(release, "tag_name"));
+				rowOptional(sb, tr("repo.row.name"), name);
+				rowOptional(sb, tr("repo.row.published"), fmtDate(text(release, "published_at")));
+				rowOptional(sb, tr("qv.row.author"), text(release.path("author"), "login"));
 				String relUrl = text(release, "html_url");
 				if (!relUrl.isBlank()) {
-					rowRaw(sb, "URL", link(relUrl));
+					rowRaw(sb, tr("qv.row.url"), link(relUrl));
 				}
 				sb.append("</table>");
 			}
@@ -560,9 +565,9 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 	private String errorHtml(String repo, String message) {
 		return htmlHead()
 				+ "<h1>" + esc(repo) + "</h1>"
-				+ "<h2>Unable to load repository information</h2>"
-				+ "<p>" + esc(message == null ? "Unknown error." : message) + "</p>"
-				+ "<p class='dim'>Ensure the GitHub CLI (gh) is installed and authenticated.</p>"
+				+ "<h2>" + tr("repo.error.heading") + "</h2>"
+				+ "<p>" + esc(message == null ? tr("qv.unknown.error") : message) + "</p>"
+				+ "<p class='dim'>" + tr("qv.ensure.gh") + "</p>"
 				+ htmlFoot();
 	}
 
@@ -578,11 +583,11 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 
 	private static String repoStatus(JsonNode repo) {
 		List<String> flags = new ArrayList<>();
-		if (repo.path("fork").asBoolean(false)) flags.add("Fork");
-		if (repo.path("archived").asBoolean(false)) flags.add("Archived");
-		if (repo.path("disabled").asBoolean(false)) flags.add("Disabled");
-		if (repo.path("is_template").asBoolean(false)) flags.add("Template");
-		return flags.isEmpty() ? "Active" : String.join(", ", flags);
+		if (repo.path("fork").asBoolean(false)) flags.add(tr("repo.status.fork"));
+		if (repo.path("archived").asBoolean(false)) flags.add(tr("repo.status.archived"));
+		if (repo.path("disabled").asBoolean(false)) flags.add(tr("repo.status.disabled"));
+		if (repo.path("is_template").asBoolean(false)) flags.add(tr("repo.status.template"));
+		return flags.isEmpty() ? tr("repo.status.active") : String.join(", ", flags);
 	}
 
 	private static String count(JsonNode node, String field) {
@@ -712,7 +717,7 @@ public final class QuickViewRepoPlugin implements QuickViewNuclrPlugin {
 
 	@Override
 	public String getWindowTitle() {
-		return "GitHub Repository: " + (currentResource != null ? currentResource.getName() : "");
+		return tr("repo.window.title", currentResource != null ? currentResource.getName() : "");
 	}
 
 	// ------------------------------------------------------------- metadata ---

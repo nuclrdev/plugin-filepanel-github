@@ -17,6 +17,8 @@
 */
 package dev.nuclr.plugin.core.panel.github.gh;
 
+import static dev.nuclr.plugin.core.panel.github.Messages.tr;
+
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -54,17 +56,17 @@ public final class GitHubArtifactOperations {
 			}
 			NuclrResource artifact = artifacts.get(index);
 			if (artifact.getMetadata(ArtifactResource.Expired, false)) {
-				throw new IOException("Artifact has expired: " + artifact.getName());
+				throw new IOException(tr("artifact.expired", artifact.getName()));
 			}
 			String repo = artifact.getMetadata(ArtifactResource.Repo, "");
 			long id = artifact.getMetadata(ArtifactResource.ArtifactId, 0L);
 			if (repo.isBlank() || id <= 0) {
-				throw new IOException("Artifact identity is missing: " + artifact.getName());
+				throw new IOException(tr("artifact.identity.missing", artifact.getName()));
 			}
 
 			if (callback != null) {
-				callback.onStart((move ? "Moving " : "Copying ") + artifact.getName()
-						+ " (" + (index + 1) + "/" + artifacts.size() + ")");
+				callback.onStart(tr(move ? "artifacts.progress.moving" : "artifacts.progress.copying",
+						artifact.getName(), String.valueOf(index + 1), String.valueOf(artifacts.size())));
 				callback.onProgress(index, artifacts.size());
 			}
 
@@ -119,7 +121,7 @@ public final class GitHubArtifactOperations {
 				continue;
 			}
 			if (callback != null) {
-				callback.onStart("Deleting " + artifact.getName() + " (" + (index + 1) + "/" + total + ")");
+				callback.onStart(tr("artifacts.progress.deleting", artifact.getName(), String.valueOf(index + 1), String.valueOf(total)));
 				callback.onProgress(index, total);
 			}
 			deleter.delete(repo, id, cancelled);

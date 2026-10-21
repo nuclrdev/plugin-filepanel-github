@@ -1,5 +1,7 @@
 package dev.nuclr.plugin.core.panel.github;
 
+import static dev.nuclr.plugin.core.panel.github.Messages.tr;
+
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -96,6 +98,9 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 
 	@Override
 	public void preinit(NuclrPluginContext context) {
+		if (context != null) {
+			Messages.use(context.getLocale());
+		}
 		this.context = context;
 	}
 
@@ -114,7 +119,7 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 		menuItem.setText("GitHub");
 		menuItem.setUuid("gh_root");
 		
-		holder.setTitle("GitHub Repositories");
+		holder.setTitle(tr("menu.title"));
 		holder.setMenuItems(List.of(menuItem));
 		
 		return holder;
@@ -124,9 +129,9 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 	public List<NuclrMenuResource> menuItems(NuclrResource resource) {
 		if (ArtifactResource.isArtifact(resource) || hasTag(selectedResource, ActionsResource.Tag)) {
 			return List.of(
-					new NuclrMenuResource("Copy", "F5", CopyAction),
-					new NuclrMenuResource("Move", "F6", MoveAction),
-					new NuclrMenuResource("Delete", "F8", DeleteAction));
+					new NuclrMenuResource(tr("menu.copy"), "F5", CopyAction),
+					new NuclrMenuResource(tr("menu.move"), "F6", MoveAction),
+					new NuclrMenuResource(tr("menu.delete"), "F8", DeleteAction));
 		}
 		// While branches are displayed, selectedResource is the repository that was
 		// opened to produce the list. Register F5 for that stable panel context as
@@ -135,7 +140,7 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 		return branchResource(resource) != null
 				|| resource == null && hasTag(selectedResource, "github-repo")
 				|| branchResource(selectedResource) != null
-				? List.of(new NuclrMenuResource("Clone", "F5", CloneAction))
+				? List.of(new NuclrMenuResource(tr("menu.clone"), "F5", CloneAction))
 				: List.of();
 	}
 
@@ -157,13 +162,13 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 		ghProbed = true;
 
 		if (false == Gh.isGhInstalled()) {
-			showError("GitHub CLI not found", "The GitHub file panel plugin requires the GitHub CLI to be installed. Please install the GitHub CLI to use this plugin.");
+			showError(tr("gh.not.found.title"), tr("gh.not.found.message"));
 			log.info("GitHub CLI not found");
 			return;
 		}
 
 		if (false == Gh.isGhAuthenticated()) {
-			showError("GitHub CLI not authenticated", "The GitHub file panel plugin requires the user to be authenticated with the GitHub CLI. Please authenticate with the GitHub CLI to use this plugin.");
+			showError(tr("gh.not.authenticated.title"), tr("gh.not.authenticated.message"));
 			log.info("GitHub CLI not authenticated");
 			return;
 		}
@@ -340,8 +345,8 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 			return selectedResources.size() == 1 ? selectedResources.getFirst().getName() : null;
 		}
 		long bytes = artifacts.stream().mapToLong(NuclrResource::getLength).sum();
-		return artifacts.size() + (artifacts.size() == 1 ? " artifact" : " artifacts")
-				+ "  |  " + humanSize(bytes);
+		return tr(artifacts.size() == 1 ? "selection.artifact" : "selection.artifacts",
+				String.valueOf(artifacts.size()), humanSize(bytes));
 	}
 
 	@Override
@@ -408,7 +413,7 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 								null);
 					}
 				},
-				error -> showError("Clone failed", error.getMessage()));
+				error -> showError(tr("clone.failed"), error.getMessage()));
 	}
 
 	private void transferArtifacts(BaseNuclrPlugin other, List<NuclrResource> selectedResources,
@@ -420,12 +425,12 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 		}
 		Path destination = GitHubClone.destinationDirectory(other);
 		if (destination == null) {
-			showError(move ? "Move artifacts" : "Copy artifacts",
-					"Open a writable local folder in the other file panel.");
+			showError(tr(move ? "artifacts.move.title" : "artifacts.copy.title"),
+					tr("artifacts.no.destination"));
 			return;
 		}
-		if (move && !confirmArtifactRemoval("Move artifacts", artifacts,
-				"After each artifact is downloaded, it will be deleted from GitHub.")) {
+		if (move && !confirmArtifactRemoval(tr("artifacts.move.title"), artifacts,
+				tr("artifacts.move.warning"))) {
 			return;
 		}
 
@@ -442,12 +447,11 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 			} catch (GhCancelledException e) {
 				log.debug("GitHub artifact {} cancelled", move ? "move" : "copy");
 			} catch (Exception e) {
-				String operation = move ? "Move artifacts" : "Copy artifacts";
-				log.error("{} failed: {}", operation, e.getMessage(), e);
+				log.error("{} failed: {}", move ? "Move artifacts" : "Copy artifacts", e.getMessage(), e);
 				if (callback != null) {
-					callback.onError(operation, e);
+					callback.onError(tr(move ? "artifacts.move.title" : "artifacts.copy.title"), e);
 				}
-				showError(operation + " failed", e.getMessage());
+				showError(tr(move ? "artifacts.move.failed" : "artifacts.copy.failed"), e.getMessage());
 			}
 		}, move ? "github-artifact-move" : "github-artifact-copy");
 		worker.setDaemon(true);
@@ -459,14 +463,14 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 		List<NuclrResource> artifacts = GitHubArtifactOperations.selectedArtifacts(
 				selectedResources, focusedResource);
 		if (artifacts.isEmpty()
-				|| !confirmArtifactRemoval("Delete artifacts", artifacts,
-						"This permanently deletes the selected artifacts from GitHub.")) {
+				|| !confirmArtifactRemoval(tr("artifacts.delete.title"), artifacts,
+						tr("artifacts.delete.warning"))) {
 			return;
 		}
 
 		// The host passes no callback for Delete, so the plugin shows its own progress.
 		ArtifactProgressDialog progress = ArtifactProgressDialog.show(
-				"Delete artifacts", "deleted", artifacts.size(), callback);
+				tr("artifacts.delete.title"), "artifacts.progress.deleted", artifacts.size(), callback);
 		Thread worker = new Thread(() -> {
 			Exception failure = null;
 			try {
@@ -482,8 +486,8 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 			}
 			if (failure != null) {
 				log.error("Artifact deletion failed: {}", failure.getMessage(), failure);
-				progress.onError("Delete artifacts", failure);
-				showError("Delete artifacts failed", failure.getMessage());
+				progress.onError(tr("artifacts.delete.title"), failure);
+				showError(tr("artifacts.delete.failed"), failure.getMessage());
 			}
 		}, "github-artifact-delete");
 		worker.setDaemon(true);
@@ -493,7 +497,7 @@ public class GithubFilePanelProvider implements FilePanelNuclrPlugin {
 	private boolean confirmArtifactRemoval(String title, List<NuclrResource> artifacts, String warning) {
 		StringBuilder message = new StringBuilder();
 		message.append(artifacts.size() == 1 ? artifacts.getFirst().getName()
-				: artifacts.size() + " selected artifacts");
+				: tr("artifacts.selected", String.valueOf(artifacts.size())));
 		message.append(System.lineSeparator()).append(System.lineSeparator()).append(warning);
 		return JOptionPane.showConfirmDialog(null, message, title,
 				JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.OK_OPTION;
